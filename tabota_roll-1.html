@@ -8,8 +8,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/@tonejs/midi"></script>
-<!-- shared interpreter: exposes window.TabotaResolve.resolve() (same module index.html imports) -->
-<script type="module" src="tabota-resolve.js"></script>
 <style>
 :root{
   /* Light, fully hued — no achromatic axis. Pale tide-pool ground. */
@@ -98,17 +96,6 @@ input[type=number].w48{width:48px}
 .legend .free{border-top-color:var(--violet)}
 
 /* stage */
-.rbar{display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; color:var(--ink-dim,#5a6f68);}
-.rbar-k{font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-dim,#8a9b93);}
-#activeRegionName{color:var(--tide,#11897e); font-weight:600;}
-.rtabs{display:flex; gap:4px; align-items:flex-end; padding:8px 10px 0; flex-wrap:wrap;}
-.rtab{font-family:var(--mono,monospace); font-size:11.5px; background:var(--panel,#e7dfee); border:1px solid var(--line,#cdbcd6); border-bottom:none; color:var(--ink-dim,#5a6f68); padding:5px 10px; border-radius:5px 5px 0 0; cursor:pointer; display:inline-flex; align-items:center; gap:7px; line-height:1.2;}
-.rtab:hover{color:var(--ink,#18302b);}
-.rtab.on{background:var(--note-bg,#e3ebe6); color:var(--tide,#11897e); border-color:var(--tide,#11897e); font-weight:600;}
-.rtab em{font-style:normal; font-size:9.5px; letter-spacing:.04em; color:var(--ink-dim,#8a9b93); opacity:.85;}
-.rtab .rtab-x{font-size:13px; line-height:1; opacity:.45; margin-left:1px;}
-.rtab .rtab-x:hover{opacity:1; color:var(--ember,#dd6b12);}
-.rtab.rtab-add{color:var(--tide,#11897e); font-weight:700; padding:5px 11px;}
 .stage{position:relative; flex:1; min-height:0; overflow:hidden; background:var(--note-bg)}
 #roll{display:block; width:100%; height:100%; cursor:crosshair; touch-action:none}
 .stage.tool-select #roll{cursor:default}
@@ -182,7 +169,6 @@ footer code{font-family:var(--mono); color:var(--ink)}
     <button data-tool="pen" title="Pen — click to place points, double-click/Enter to finish (P)">✎ pen</button>
     <button data-tool="free" title="Freehand contour (F)">∿ free</button>
     <button data-tool="erase" title="Erase (E)">⌫ erase</button>
-    <button data-tool="slice" title="Slice — click to cut at that spot; the band picks the axis: time, pitch, or region (= both). Box doesn't slice. (S)">⌿ slice</button>
     <button data-tool="pan" title="Pan (space-drag)">✋ pan</button>
   </div>
   <div class="group">
@@ -191,16 +177,6 @@ footer code{font-family:var(--mono); color:var(--ink)}
       <button data-m="replace" class="on" title="Replace — a click or marquee starts a fresh selection">replace</button>
       <button data-m="include" title="Include — clicks &amp; marquees add to the selection (or hold Shift)">＋ incl</button>
       <button data-m="exclude" title="Exclude — clicks &amp; marquees remove from the selection (or hold Alt)">− excl</button>
-    </div>
-  </div>
-
-  <div class="group">
-    <label>band</label>
-    <div class="seg" id="selBandSeg">
-      <button data-b="box" class="on" title="Box — free rectangular marquee">▢ box</button>
-      <button data-b="vertical" title="Time band — sweep horizontally to select a span of time across all pitches">▮ time</button>
-      <button data-b="horizontal" title="Pitch band — sweep vertically to select a register across all time">▬ pitch</button>
-      <button data-b="region" title="Region band — click or sweep to select everything in whole region(s); with the slice tool it cuts time+pitch">田 region</button>
     </div>
   </div>
 
@@ -222,7 +198,7 @@ footer code{font-family:var(--mono); color:var(--ink)}
   </div>
 
   <div class="group">
-    <label>region · time</label>
+    <label>time</label>
     <div class="seg regime" id="timeRegime">
       <button data-r="meter" class="on">meter</button>
       <button data-r="time">time</button>
@@ -233,7 +209,7 @@ footer code{font-family:var(--mono); color:var(--ink)}
     <input type="file" id="cycFile" accept=".cyc,.txt,text/plain" multiple style="display:none">
   </div>
   <div class="group">
-    <label>region · pitch</label>
+    <label>pitch</label>
     <div class="seg regime" id="pitchRegime">
       <button data-r="scale" class="on">scale</button>
       <button data-r="freq">freq·Hz</button>
@@ -289,7 +265,7 @@ footer code{font-family:var(--mono); color:var(--ink)}
 </div>
 
 <div class="toolbar" style="border-top:none">
-  <div class="group" id="tempoGroup">
+  <div class="group">
     <label>bpm</label><input type="number" id="bpm" value="120" min="20" max="400" step="1">
     <label>sig</label><input type="number" id="sigNum" class="w48" value="4" min="1" max="32"> / 
     <select id="sigDen"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>16</option></select>
@@ -311,7 +287,6 @@ footer code{font-family:var(--mono); color:var(--ink)}
   </div>
 </div>
 
-<div id="regionTabs" class="rbar"><span class="rbar-k">region</span> <span id="activeRegionName"></span></div>
 <div class="stage tool-hold" id="stage">
   <canvas id="roll"></canvas>
   <div class="drawer" id="drawer">
@@ -577,8 +552,7 @@ let DPR=Math.max(1,window.devicePixelRatio||1);
 
 /* ---- view state ---- */
 const view={
-  pxPerSec:128, pxPerSemi:14,            // seconds is the canvas's true axis
-  get pxPerBeat(){ return this.pxPerSec*60/(+bpm.value||120); },  // derived per the active region's tempo
+  pxPerBeat:64, pxPerSemi:14,
   scrollX:0, scrollY:0,                // px
   midiMin:24, midiMax:108,             // C1..C8
   tool:'hold', timeRegime:'meter', pitchRegime:'scale',
@@ -591,221 +565,6 @@ const settings={
   get snapTime(){return snapTime.checked;}, get snapPitch(){return snapPitch.checked;},
 };
 let notes=[];
-
-/* ---- region model (the authoring socket; see tabota_region_model.md) -------------
-   For now: one active region whose MAIN coordinate system mirrors the live frame
-   controls (bpm / time-sig / a4). Notes carry a region id and the id of the system
-   they hang on (= main, in the present model). The live draw/MIDI path is unchanged,
-   so with a single region the Roll behaves exactly as before (#10 parity); the region
-   model is the identity + serialization layer that tabs / merge / tempo-track build on. */
-let REGID=1; let tabsInit=false;
-function newRegionId(){ return 'r'+(REGID++); }
-function makeRegion(){            // built from the current live frame controls
-  return { id:newRegionId(), name:null, notes:[], main:'m', systems:[ { id:'m', kind:'metered',
-           bpm:settings.bpm, sigNum:settings.sigNum, sigDen:settings.sigDen,
-           a4:settings.a4, bars:settings.bars, offset:0, axis:'frequency' } ] };
-}
-let regions=[], activeRegionId=null;
-function ensureRegions(){ if(!regions.length){ const r=makeRegion(); r.name='Region 1'; regions=[r]; activeRegionId=r.id; } }
-function activeRegion(){ ensureRegions(); return regions.find(r=>r.id===activeRegionId)||regions[0]; }
-function mainSystem(r){ r=r||activeRegion(); return r.systems.find(s=>s.id===r.main)||r.systems[0]; }
-function syncRegionFromControls(){          // DOM -> active region's main system
-  const m=mainSystem(); if(!m) return;
-  m.bpm=settings.bpm; m.sigNum=settings.sigNum; m.sigDen=settings.sigDen; m.a4=settings.a4; m.bars=settings.bars;
-}
-function applyRegionToControls(r){          // active region's main -> DOM (import / tab switch)
-  const m=mainSystem(r); if(!m) return;
-  bpm.value=Math.round(m.bpm); sigNum.value=m.sigNum||4; sigDen.value=m.sigDen||4; a4.value=m.a4||440;
-  if(m.bars) bars.value=m.bars;
-}
-function normalizeNotes(){                   // every note belongs to the active region & hangs on its main
-  const r=activeRegion(); const mid=r.main;
-  for(const n of notes){ if(n.region==null) n.region=r.id; if(n.hangsOn==null) n.hangsOn=mid; }
-  normalizeHybrids();
-}
-/* ---- hybrid notes: the END point may hang on another region (chart model: per-point hangsOn).
-   The hang {region, beat} is authoritative; n.dur is DERIVED from it in home units, so all
-   existing draw / hit / play / export code keeps reading start+dur and stays correct. ---- */
-function unitsPerSec(m){ return m.kind==='chronological'?1:m.bpm/60; }
-function noteStartSec(n){ const r=regionById(n.region), m=mainSystem(r); return regionStartSec(r)+n.start/unitsPerSec(m); }
-function normalizeHybrids(){
-  for(const n of notes){
-    if(!n.end||!n.end.region) continue;
-    const er=regions.find(r=>r.id===n.end.region);
-    if(!er){ delete n.end; continue; }                          // hang target gone -> plain note
-    const endSec=regionStartSec(er)+n.end.beat/unitsPerSec(mainSystem(er));
-    const sSec=noteStartSec(n);
-    n.dur=Math.max(1e-4,(endSec-sSec)*unitsPerSec(mainSystem(regionById(n.region))));
-  }
-}
-function updateHybridEnd(n){                                    // after a direct drag: re-derive the hang from geometry
-  if(!n.end||!n.end.region) return;
-  const er=regions.find(r=>r.id===n.end.region); if(!er) return;
-  const endSec=noteStartSec(n)+n.dur/unitsPerSec(mainSystem(regionById(n.region)));
-  n.end.beat=(endSec-regionStartSec(er))*unitsPerSec(mainSystem(er));
-}
-/* relabel a note from raw geometry, seconds conserved: if the start crossed into another region the
-   note re-homes there; if the end lands outside home it hangs on that region's chart (hybrid); if the
-   end came back home the hang is dropped. Geometry is authoritative here (the inverse of
-   normalizeHybrids, where the hang is authoritative) — run after direct drags / pastes. */
-function deriveHang(n){
-  ensureRegions(); if(!regions.length) return;
-  const home=regionById(n.region);
-  const sSec=regionStartSec(home)+n.start/upsOf(home);
-  const eSec=sSec+Math.max(n.dur,1e-4)/upsOf(home);
-  const sr=regionAtSec(clampSecToContent(sSec));                       // start defines home (boundary -> later region)
-  if(sr.id!==home.id){ n.start=(sSec-regionStartSec(sr))*upsOf(sr); if(n.hangsOn!=null) n.hangsOn=sr.main; }
-  n.region=sr.id;
-  n.dur=Math.max(1e-4,(eSec-sSec)*upsOf(sr));
-  const er=regionAtSec(clampSecToContent(eSec-1e-7));                  // end on a boundary stays with the earlier chart
-  if(er.id!==sr.id){ n.end=n.end||{}; n.end.region=er.id; n.end.beat=(eSec-regionStartSec(er))*upsOf(er); }
-  else if(n.end) delete n.end;
-}
-
-/* ---- regions are charts over one global notes array; focusing one only changes whose looks the controls show ---- */
-function focusRegion(id){
-  if(!regions.find(r=>r.id===id)) return;
-  syncRegionFromControls();                 // save the looks of the region we're leaving
-  activeRegionId=id;
-  applyRegionToControls(activeRegion());
-  // reflect the region's coordinate kind in the meter|time toggle (without converting)
-  const kind=mainSystem().kind==='chronological'?'time':'meter';
-  view.timeRegime=kind;
-  document.querySelectorAll('#timeRegime button').forEach(x=>x.classList.toggle('on',x.dataset.r===kind));
-  if(typeof regimePill==='function') regimePill();
-  updateRegionIndicator();
-  if(typeof draw==='function') draw();
-}
-function switchRegion(id){ focusRegion(id); }   // back-compat
-function addRegion(){
-  syncRegionFromControls();
-  const r=makeRegion(); r.name='Region '+(regions.length+1); regions.push(r);
-  focusRegion(r.id); flash('added '+r.name);
-}
-function deleteRegion(id){
-  if(regions.length<=1){ flash('need at least one region'); return; }
-  const i=regions.findIndex(r=>r.id===id); if(i<0) return;
-  notes=notes.filter(n=>n.region!==id);     // global notes: this region's notes go with it
-  regions.splice(i,1);
-  if(activeRegionId===id) activeRegionId=regions[Math.max(0,i-1)].id;
-  applyRegionToControls(activeRegion()); changed();
-}
-function renameRegion(id){ const r=regions.find(x=>x.id===id); if(!r) return; const n=prompt('Region name:', r.name||r.id); if(n!=null && n.trim()){ r.name=n.trim(); if(typeof draw==='function') draw(); updateRegionIndicator(); } }
-function updateRegionIndicator(){ const el=document.getElementById('activeRegionName'); const r=activeRegion(), m=mainSystem(r);
-  if(el){ el.textContent = (r.name||r.id) + (m? (m.kind==='chronological' ? '  free time' : ('  \u2669'+Math.round(m.bpm)+' '+(m.sigNum||4)+'/'+(m.sigDen||4))) : ''); }
-  const tg=document.getElementById('tempoGroup'); if(tg) tg.style.display = (m && m.kind==='chronological') ? 'none' : '';   // free time has no tempo/meter/A4
-}
-function renderRegionTabs(){ updateRegionIndicator(); }   // tab strip removed — on-canvas region labels are the tabs
-/* ---- pitch regions: NON-extent-defining charts for the y-axis. They hang on absolute seconds
-   (so tempo-region edits never move them), tile the clock, and each carries its own scale/regime.
-   The focused one drives the existing activeScale/pitchRegime globals, so every snap & ruler
-   call site becomes per-pitch-region without modification. ---- */
-let PRID=1;
-let pitchRegions=[], activePitchRegionId=null;
-function ensurePitchRegions(){ if(!pitchRegions.length){ pitchRegions=[{id:'p'+(PRID++), startSec:0, scaleId:'12tet', regime:'scale'}]; activePitchRegionId=pitchRegions[0].id; } }
-function pitchRegionAtSec(sec){ ensurePitchRegions(); let cur=pitchRegions[0];
-  for(const p of pitchRegions){ if(p.startSec<=sec+1e-9) cur=p; else break; } return cur; }
-function focusPitchRegion(id){
-  ensurePitchRegions(); const p=pitchRegions.find(x=>x.id===id); if(!p) return;
-  activePitchRegionId=id;
-  if(SCALES[p.scaleId]){ activeScaleId=p.scaleId; activeScale=SCALES[p.scaleId]; scaleSel.value=p.scaleId; }
-  view.pitchRegime=p.regime||'scale';
-  document.querySelectorAll('#pitchRegime button').forEach(x=>x.classList.toggle('on',x.dataset.r===view.pitchRegime));
-  if(typeof regimePill==='function') regimePill();
-}
-function activePitchRegion(){ ensurePitchRegions(); return pitchRegions.find(p=>p.id===activePitchRegionId)||pitchRegions[0]; }
-function splitPitchAt(sec){
-  ensurePitchRegions();
-  const cur=pitchRegionAtSec(sec);
-  if(Math.abs(sec-cur.startSec)<1e-6){ flash('already a pitch boundary here'); return; }
-  pushHistory();
-  const np={id:'p'+(PRID++), startSec:sec, scaleId:cur.scaleId, regime:cur.regime};
-  pitchRegions.push(np); pitchRegions.sort((a,b)=>a.startSec-b.startSec);
-  focusPitchRegion(np.id); changed(); flash('pitch region sliced');
-}
-function splitRegionAt(r, cutBeat){
-  const m=mainSystem(r);
-  const lenBeats = m.kind==='chronological' ? (m.bars||settings.bars) : (m.bars||settings.bars)*(m.sigNum||4);
-  if(cutBeat<=1e-6 || cutBeat>=lenBeats-1e-6){ flash('click inside a region to slice it'); return; }
-  pushHistory();
-  const i=regions.findIndex(x=>x.id===r.id);
-  const r2={ id:newRegionId(), name:'Region '+(regions.length+1), main:r.main, systems:r.systems.map(s=>Object.assign({},s)) };
-  const cutUnits = (m.kind==='chronological') ? cutBeat : cutBeat/(m.sigNum||4);   // seconds or bars
-  const totalUnits = (m.bars||settings.bars);
-  m.bars = cutUnits;
-  mainSystem(r2).bars = totalUnits - cutUnits;
-  regions.splice(i+1,0,r2);
-  for(const n of notes){
-    if(n.region!==r.id) continue;
-    if(n.start>=cutBeat-1e-9){ n.region=r2.id; n.start-=cutBeat; if(n.end&&n.end.region===r.id){ n.end.region=r2.id; n.end.beat-=cutBeat; } }   // wholly after the cut
-    else if(!n.end && n.start+n.dur>cutBeat+1e-9){ n.end={region:r2.id, beat:(n.start+n.dur)-cutBeat}; }                                          // SPANS the cut -> hybrid
-    else if(n.end&&n.end.region===r.id&&n.end.beat>cutBeat+1e-9){ n.end.region=r2.id; n.end.beat-=cutBeat; }                                      // existing hang crosses
-  }
-  applyRegionToControls(activeRegion());     // controls now reflect the post-slice bars (prevents stale-sync clobber)
-  changed(); updateRegionIndicator(); flash('sliced into 2 regions');
-}
-/* ---- boundary merge / cannibalism: move the A|B boundary, conserving every note's seconds ---- */
-function regUnitSec(m){ return m.kind==='chronological' ? 1 : (m.sigNum||4)*60/(m.bpm||120); }   // seconds per "snap unit" (a bar, or 1s)
-function snapBoundarySec(sec, i, mode){
-  if(!settings.snapTime) return sec;
-  if(mode==='left'||mode==='end'){ const m=mainSystem(regions[i]), st=regionStartSec(regions[i]); const u=regUnitSec(m);
-    return st + Math.round((sec-st)/u)*u; }                      // that region's own grid -> clean ending for it
-  const m=mainSystem(regions[i+1]), anchor=regionStartSec(regions[i+1]); const u=regUnitSec(m);
-  return anchor + Math.round((sec-anchor)/u)*u;                  // right region's units from the boundary -> "per second / per bar"
-}
-function moveBoundary(i, newBoundarySec){
-  const left=regions[i], right=regions[i+1];
-  const leftStart=regionStartSec(left), rightEnd=regionStartSec(right)+regionSecLen(right);
-  const MIN=0.25;
-  newBoundarySec=Math.max(leftStart+MIN, Math.min(rightEnd-MIN, newBoundarySec));
-  const lm=mainSystem(left), rm=mainSystem(right);
-  // record affected notes' absolute seconds BEFORE resizing (start AND end — shape is conserved in time)
-  const aff=notes.filter(n=>n.region===left.id||n.region===right.id).map(n=>{
-    const r=regionById(n.region), m=mainSystem(r), rs=regionStartSec(r), spb=m.kind==='chronological'?1:60/m.bpm;
-    return {n, sec: rs+n.start*spb, endSec: rs+(n.start+(n.dur||0))*spb};
-  });
-  const hangPre=new Map();   // pre-resize absolute seconds of every hang pointing at either region
-  for(const n of notes){ if(n.end&&(n.end.region===left.id||n.end.region===right.id)){
-    const er=regionById(n.end.region); hangPre.set(n, regionStartSec(er)+n.end.beat/unitsPerSec(mainSystem(er))); } }
-  // resize both regions to meet at the new boundary
-  lm.bars = lm.kind==='chronological'? (newBoundarySec-leftStart) : (newBoundarySec-leftStart)*lm.bpm/60/(lm.sigNum||4);
-  rm.bars = rm.kind==='chronological'? (rightEnd-newBoundarySec) : (rightEnd-newBoundarySec)*rm.bpm/60/(rm.sigNum||4);
-  // reassign each note to whichever region now owns its onset; recompute local beats AND duration (seconds conserved)
-  for(const {n,sec,endSec} of aff){
-    const goLeft = sec < newBoundarySec-1e-9;
-    const m = goLeft?lm:rm, origin = goLeft?leftStart:newBoundarySec, ups = m.kind==='chronological'?1:m.bpm/60;  // units per second
-    n.region = goLeft?left.id:right.id;
-    n.start = (sec-origin)*ups;
-    n.dur   = Math.max(1e-4,(endSec-sec)*ups);
-  }
-  // hybrid end-hangs pointing at either region: conserve their absolute seconds, re-home if the boundary passed them
-  for(const n of notes){
-    if(!hangPre.has(n)) continue;
-    const endSec=hangPre.get(n);
-    const goLeft = endSec < newBoundarySec-1e-9;
-    n.end.region = goLeft?left.id:right.id;
-    const origin = goLeft?leftStart:newBoundarySec, ups = unitsPerSec(goLeft?lm:rm);
-    n.end.beat = (endSec-origin)*ups;
-  }
-  applyRegionToControls(activeRegion());   // keep controls in step (prevents stale-sync clobber)
-  changed(); updateRegionIndicator();
-}
-function boundaryHandleAt(p){
-  if(p.y<GUT_T+1 || p.y>GUT_T+20) return null;
-  for(let i=0;i<regions.length-1;i++){ const bx=secToX(regionStartSec(regions[i+1]));
-    if(p.x>=bx-13 && p.x<bx) return {i, mode:'left'};     // this region's end-flag (snaps to left grid)
-    if(p.x>=bx && p.x<=bx+13) return {i, mode:'right'};   // next region's start tab (snaps to right grid)
-  }
-  const endX=secToX(regions.reduce((s,r)=>s+regionSecLen(r),0));
-  if(p.x>=endX-13 && p.x<=endX+6) return {i:regions.length-1, mode:'end'};   // piece-end flag: drag to extend/shrink the last region
-  return null;
-}
-function resizeLastRegion(newEndSec){
-  const last=regions[regions.length-1], m=mainSystem(last), ls=regionStartSec(last);
-  newEndSec=Math.max(ls+0.25,newEndSec);
-  m.bars = m.kind==='chronological' ? (newEndSec-ls) : (newEndSec-ls)*m.bpm/60/(m.sigNum||4);
-  applyRegionToControls(activeRegion()); changed();
-}
 let selection=new Set();
 let clipboard=null;                 // {notes:[...deep clones with absolute start]}
 const lastMouse={x:0,y:0,inside:false};
@@ -819,11 +578,6 @@ function ptSelHas(note,idx){ const s=ptSel.get(note); return !!s && s.has(idx); 
 function granCount(){ let c=0; for(const s of ptSel.values()) c+=s.size; for(const id of selection){ const n=notes.find(x=>x.id===id); if(n) c+=n.pts.length; } return c; }
 function clearGran(){ selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; }
 let selMode='replace';              // 'replace' | 'include' | 'exclude' — how clicks & marquees combine
-let selBand='box';                  // 'box' | 'vertical' (time span, all pitches) | 'horizontal' (pitch span, all time) | 'region' (whole regions)
-/* PINNED: the slice tool currently reads its cutting axis from selBand (time->time cut, pitch->pitch cut,
-   region->both, box->no-op). Selection bands and slice targets may need to RE-SEPARATE later — e.g. regions
-   whose lower and upper pitch halves carry different charts would want a pitch-bounded time slice that a
-   shared band can't express. If that lands, reintroduce an independent slice-target control. */
 // merge a per-note set of point indices into selection/ptSel
 function mergeSel(note, idxSet, op){ // op: 'add' | 'sub'
   let cur = selection.has(note.id) ? new Set(note.pts.map((_,i)=>i)) : (ptSel.get(note)? new Set(ptSel.get(note)) : new Set());
@@ -841,16 +595,14 @@ function entityIndices(h){           // the point indices a hit entity represent
 
 /* ---- undo / redo history ---- */
 const HMAX=120; let undoStack=[], redoStack=[], dragHist=null;
-function histSnapshot(){ return JSON.stringify({n:notes, r:regions, a:activeRegionId, p:pitchRegions, ap:activePitchRegionId}); }
+function histSnapshot(){ return JSON.stringify(notes); }
 function pushUndo(snap){ undoStack.push(snap); if(undoStack.length>HMAX) undoStack.shift(); }
 function pushHistory(){ pushUndo(histSnapshot()); redoStack=[]; refreshHistBtns(); }   // call BEFORE a mutation
 function commitDragHist(){ if(dragHist!=null){ if(dragHist!==histSnapshot()){ pushUndo(dragHist); redoStack=[]; } dragHist=null; refreshHistBtns(); } }
 function restoreHist(json){
-  const o=JSON.parse(json);
-  if(Array.isArray(o)){ notes=o; } else { notes=o.n||[]; if(o.r){ regions=o.r; activeRegionId=o.a; } if(o.p){ pitchRegions=o.p; activePitchRegionId=o.ap; } }
+  notes=JSON.parse(json);
   selection.clear(); ptSel=new Map(); segSel=null; pointSel=null;
   NID=Math.max(0, ...notes.map(n=>n.id))+1;
-  applyRegionToControls(activeRegion());
   clampScroll(); changed();
 }
 function undo(){ if(!undoStack.length){ flash('nothing to undo'); return; } redoStack.push(histSnapshot()); restoreHist(undoStack.pop()); refreshHistBtns(); flash('undo'); }
@@ -936,48 +688,11 @@ const bpm=document.getElementById('bpm'), sigNum=document.getElementById('sigNum
  status=document.getElementById('status');
 
 /* ---- geometry helpers ---- */
-function contentW(){ ensureRegions(); return regions.reduce((s,r)=>s+regionSecLen(r),0)*view.pxPerSec; }
+function contentW(){ return totalBeats()*view.pxPerBeat; }
 function contentH(){ return (view.midiMax-view.midiMin)*view.pxPerSemi; }
 function totalBeats(){ return settings.bars*settings.sigNum; }
-/* seconds primitives — the global clock the canvas scales to */
-function secToX(sec){ return GUT_L - view.scrollX + sec*view.pxPerSec; }
-function xToSec(x){ return (x - GUT_L + view.scrollX)/view.pxPerSec; }
-/* region tiling on the global clock */
-function regionSecLen(r){ const m=mainSystem(r); const beats=(m.bars||settings.bars)*(m.sigNum||4);
-  return m.kind==='chronological' ? (m.bars||settings.bars) : beats*60/(m.bpm||120); }
-function regionStartSec(r){ let s=0; for(const x of regions){ if(x.id===r.id) break; s+=regionSecLen(x); } return s; }
-function regionAtSec(sec){ let s=0; for(const r of regions){ const len=regionSecLen(r); if(sec<s+len) return r; s+=len; } return regions[regions.length-1]||activeRegion(); }
-function regionAtX(x){ return regionAtSec(xToSec(x)); }
-/* a region-local beat -> x, for any region (the backdrop uses this; the active region is the default) */
-let _ctxRegion=null;   // drawing/hit-test context: which region's coordinates beatToX uses (null = active)
-function regionById(id){ return regions.find(r=>r.id===id)||activeRegion(); }
-function beatToSecIn(b,r){ const m=mainSystem(r); return regionStartSec(r) + (m.kind==='chronological'? b : b*60/(m.bpm||120)); }
-function beatToXin(b,r){ return secToX(beatToSecIn(b,r)); }
-function beatToX(b){ return beatToXin(b, _ctxRegion||activeRegion()); }
-function xToBeat(x){ const r=activeRegion(); const m=mainSystem(r); const sec=xToSec(x)-regionStartSec(r); return m.kind==='chronological'? sec : sec*(m.bpm||120)/60; }
-/* ---- cross-region kit: drags work in seconds (the one true axis) and re-enter any chart honestly ----
-   "snapping vs hanging are different verbs": the cursor snaps to whichever region's grid it is OVER,
-   while the value is stored in the note's HOME units — allegiance is decided later by deriveHang. */
-function totalSec(){ ensureRegions(); return regions.reduce((s,r)=>s+regionSecLen(r),0); }
-function upsOf(r){ return unitsPerSec(mainSystem(r)); }
-function pxPerBeatIn(r){ return view.pxPerSec/upsOf(r); }
-function xToBeatIn(x,r){ return (xToSec(x)-regionStartSec(r))*upsOf(r); }
-function clampSecToContent(sec){ return Math.max(0,Math.min(totalSec(),sec)); }
-/* differential snap: snap an absolute second to the grid of whichever region owns that second */
-function snapSecToChart(sec){
-  if(!settings.snapTime) return sec;
-  const r=regionAtSec(sec), m=mainSystem(r), s0=regionStartSec(r);
-  const local=(sec-s0)*unitsPerSec(m);
-  const snapped = (r.id===activeRegionId) ? snapBeat(local)                       // active region keeps its cycle-aware snap
-    : (m.kind==='chronological' ? Math.round(local) : Math.round(local*settings.grid)/settings.grid);
-  return s0+snapped/unitsPerSec(m);
-}
-/* cursor x -> beat in region r's chart, snapped to the chart under the cursor, clamped to content */
-function xToBeatSnappedIn(x,r){ return (clampSecToContent(snapSecToChart(clampSecToContent(xToSec(x))))-regionStartSec(r))*upsOf(r); }
-function xToBeatClampedIn(x,r){ return (clampSecToContent(xToSec(x))-regionStartSec(r))*upsOf(r); }
-/* region-local beat values may run past the region (or negative) — content-wide clamp & chart snap in r's units */
-function clampBeatIn(b,r){ const s0=regionStartSec(r), u=upsOf(r); return Math.max(-s0*u, Math.min((totalSec()-s0)*u, b)); }
-function snapBeatIn(b,r){ const s0=regionStartSec(r), u=upsOf(r); return (snapSecToChart(s0+b/u)-s0)*u; }
+function beatToX(b){ return GUT_L - view.scrollX + b*view.pxPerBeat; }
+function xToBeat(x){ return (x - GUT_L + view.scrollX)/view.pxPerBeat; }
 function midiToY(m){ return GUT_T - view.scrollY + (view.midiMax-m)*view.pxPerSemi; }
 function yToMidi(y){ return view.midiMax - (y - GUT_T + view.scrollY)/view.pxPerSemi; }
 function hzToY(hz){ return midiToY(freqToMidi(hz,settings.a4)); }
@@ -992,7 +707,6 @@ function clampScroll(){
 /* ---- snapping ---- */
 function snapBeat(b){
   if(!settings.snapTime) return b;
-  if(mainSystem().kind==='chronological') return Math.round(b);   // free time: snap to whole seconds, never a 4/4
   if(view.timeRegime==='meter' && activeCycle && !activeCycle.isEven){   // snap to cycle phases (per bar)
     const bpb=settings.sigNum;
     const bar=Math.floor(b/bpb), frac=(b/bpb)-bar;                       // phase within the bar/cycle
@@ -1065,14 +779,12 @@ function voiceColor(v){ return VOICE_COLORS[(((v||1)-1)%VOICE_COLORS.length+VOIC
 function draw(){
   const W=cv.clientWidth, H=cv.clientHeight;
   ctx.clearRect(0,0,W,H);
-  // note area bg — the working field ends at the double bar; past it the page is a blank field
-  const endX=Math.max(GUT_L,Math.min(W,secToX(totalSec())));
-  ctx.fillStyle=col('--note-bg'); ctx.fillRect(GUT_L,GUT_T,endX-GUT_L,H-GUT_T);
+  // note area bg
+  ctx.fillStyle=col('--note-bg'); ctx.fillRect(GUT_L,GUT_T,W-GUT_L,H-GUT_T);
 
   drawPitchGrid(W,H);
-  drawAllGrids(W,H);
+  drawTimeGrid(W,H);
   drawNotes(W,H);
-  drawRegionFrames(W,H);
   drawPlayhead(W,H);
 
   // gutters cover spill
@@ -1080,9 +792,7 @@ function draw(){
 }
 
 function drawPitchGrid(W,H){
-  // pitch lines exist only where the score does — the field past the double bar stays blank
-  const endX=Math.max(GUT_L,Math.min(W,secToX(totalSec())));
-  ctx.save(); ctx.beginPath(); ctx.rect(GUT_L,GUT_T,endX-GUT_L,H-GUT_T); ctx.clip();
+  ctx.save(); ctx.beginPath(); ctx.rect(GUT_L,GUT_T,W-GUT_L,H-GUT_T); ctx.clip();
   if(view.pitchRegime==='scale' && activeScale.is12){
     const top=Math.ceil(yToMidi(GUT_T)), bot=Math.floor(yToMidi(H));
     for(let m=bot;m<=top;m++){
@@ -1171,87 +881,10 @@ function drawTimeGrid(W,H){
   ctx.restore();
 }
 
-function drawAllGrids(W,H){
-  ensureRegions();
-  for(const r of regions){
-    const m=mainSystem(r); const s0=regionStartSec(r), len=regionSecLen(r);
-    const x0=secToX(s0), x1=secToX(s0+len);
-    if(x1<GUT_L||x0>W) continue;
-    _ctxRegion=r;
-    ctx.save(); const cx0=Math.max(GUT_L,x0), cx1=Math.min(W,x1);
-    ctx.beginPath(); ctx.rect(cx0,GUT_T,Math.max(0,cx1-cx0),H-GUT_T); ctx.clip();
-    if(m.kind==='chronological'){
-      // free time: ONE seconds grid, no subdivisions — visually and functionally not a 4/4
-      const pps=view.pxPerSec; let step=1; if(pps<40) step=Math.pow(10,Math.ceil(Math.log10(40/pps)));
-      ctx.strokeStyle='rgba(17,137,126,0.30)'; ctx.lineWidth=1;
-      for(let s=0;s<=len+1e-6;s+=step){ const x=secToX(s0+s); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
-    } else {
-      const sig=m.sigNum||4; const rbeats=(m.bars||settings.bars)*sig; const sub=settings.grid||4;
-      if(view.pxPerBeat/sub>=6){ ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
-        for(let b=0;b<=rbeats+1e-6;b+=1/sub){ const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); } }
-      for(let b=0;b<=rbeats+1e-6;b++){ const x=beatToX(b); const bar=(b%sig===0);
-        ctx.strokeStyle = bar?'rgba(17,137,126,0.40)':'rgba(40,82,76,0.16)'; ctx.lineWidth=bar?1.4:1;
-        ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
-    }
-    ctx.restore();
-  }
-  _ctxRegion=null;
-}
-function drawRegionFrames(W,H){
-  ensureRegions();
-  ctx.save(); ctx.beginPath(); ctx.rect(GUT_L,GUT_T,W-GUT_L,H-GUT_T); ctx.clip();
-  for(const r of regions){
-    const s0=regionStartSec(r), x0=secToX(s0); const active=(r.id===activeRegionId);
-    if(s0>0 && x0>=GUT_L-1 && x0<=W){ ctx.strokeStyle='rgba(106,71,216,0.6)'; ctx.lineWidth=1.6; ctx.setLineDash([5,3]);
-      ctx.beginPath(); ctx.moveTo(Math.round(x0)+.5,GUT_T); ctx.lineTo(Math.round(x0)+.5,H); ctx.stroke(); ctx.setLineDash([]);
-      // backward end-flag handle (drag = cannibalize on the left region's grid)
-      if(x0>=GUT_L+13){ ctx.fillStyle='rgba(106,71,216,0.18)'; ctx.fillRect(x0-12,GUT_T+3,11,15);
-        ctx.fillStyle='rgba(106,71,216,0.95)'; ctx.font='10px ui-monospace, Menlo, monospace'; ctx.fillText('\u25c2|', x0-11, GUT_T+14); } }
-    const m=mainSystem(r);
-    const label=(r.name||r.id)+(m.kind==='chronological'?'  free':('  \u2669'+Math.round(m.bpm)+' '+(m.sigNum||4)+'/'+(m.sigDen||4)));
-    ctx.font='10px ui-monospace, Menlo, monospace';
-    const lx=Math.min(W-4, Math.max(GUT_L+4, x0+6)); const tw=ctx.measureText(label).width+10;
-    ctx.fillStyle = active ? 'rgba(17,137,126,0.16)' : 'rgba(231,223,238,0.66)';
-    ctx.fillRect(lx-5, GUT_T+3, tw, 15);
-    ctx.fillStyle = active ? col('--tide') : 'rgba(40,82,76,0.62)';
-    ctx.fillText(label, lx, GUT_T+14);
-  }
-  // end of piece: a double bar, as in notation — with the last region's draggable end-flag
-  { const endX=secToX(regions.reduce((s,r)=>s+regionSecLen(r),0));
-    if(endX>=GUT_L-2 && endX<=W+4){ ctx.strokeStyle='rgba(24,48,43,0.78)';
-      ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(Math.round(endX-4)+.5,GUT_T); ctx.lineTo(Math.round(endX-4)+.5,H); ctx.stroke();
-      ctx.lineWidth=3;   ctx.beginPath(); ctx.moveTo(Math.round(endX)+.5,GUT_T);   ctx.lineTo(Math.round(endX)+.5,H);   ctx.stroke();
-      if(endX>=GUT_L+13){ ctx.fillStyle='rgba(106,71,216,0.18)'; ctx.fillRect(endX-12,GUT_T+3,11,15);
-        ctx.fillStyle='rgba(106,71,216,0.95)'; ctx.font='10px ui-monospace, Menlo, monospace'; ctx.fillText('\u25c2|', endX-11, GUT_T+14); } } }
-  // tuning track — one sticky flag per PITCH region (non-extent-defining; hangs on seconds)
-  { ensurePitchRegions();
-    ctx.font='10px ui-monospace, Menlo, monospace';
-    for(let i=0;i<pitchRegions.length;i++){
-      const p=pitchRegions[i];
-      const nx = (i+1<pitchRegions.length)? secToX(pitchRegions[i+1].startSec) : W+200;
-      const x0=secToX(p.startSec);
-      if(nx<GUT_L||x0>W) continue;
-      if(p.startSec>0 && x0>=GUT_L-1){ ctx.strokeStyle='rgba(106,71,216,0.45)'; ctx.lineWidth=1; ctx.setLineDash([2,3]);
-        ctx.beginPath(); ctx.moveTo(Math.round(x0)+.5,GUT_T+19); ctx.lineTo(Math.round(x0)+.5,H); ctx.stroke(); ctx.setLineDash([]); }
-      const sc=(SCALES[p.scaleId]&&SCALES[p.scaleId].name)||p.scaleId;
-      const label = sc + (p.regime==='freq'?' · Hz':'');
-      const lx=Math.min(nx-4, Math.max(GUT_L+4, x0+4));
-      const tw=ctx.measureText(label).width+10;
-      const focused=(p.id===activePitchRegionId);
-      ctx.fillStyle = focused ? 'rgba(106,71,216,0.22)' : 'rgba(106,71,216,0.10)';
-      ctx.fillRect(lx-4, GUT_T+20, tw, 14);
-      ctx.fillStyle = focused ? 'rgba(106,71,216,1)' : 'rgba(106,71,216,0.7)';
-      ctx.fillText(label, lx, GUT_T+30);
-    }
-  }
-  ctx.restore();
-}
-
 function drawNotes(W,H){
   ctx.save(); ctx.beginPath(); ctx.rect(GUT_L,GUT_T,W-GUT_L,H-GUT_T); ctx.clip();
   ctx.lineCap='round'; ctx.lineJoin='round';
   for(const n of notes){
-    _ctxRegion=regionById(n.region);
     const x0=beatToX(n.start), x1=beatToX(n.start+Math.max(n.dur,0.0001));
     if(x1<GUT_L||x0>W) continue;
     const sel=selection.has(n.id);
@@ -1275,8 +908,6 @@ function drawNotes(W,H){
     const showBadge = (sel||segOf>=0||part) || (n.dur*view.pxPerBeat>26 && view.pxPerSemi>8);
     if(showBadge) voiceBadge(x0,yS,n.voice,c,startSel); else handle(x0,yS,startSel);
     handle(x1,yE,endSel);
-    if(n.end&&n.end.region){ ctx.strokeStyle='rgba(106,71,216,0.95)'; ctx.lineWidth=2;   // hybrid: end hangs on another region
-      ctx.beginPath(); ctx.arc(x1,yE,7,0,Math.PI*2); ctx.stroke(); }
     if(n.pts.length>2){
       const showPts = sel || segOf>=0 || !!part;
       for(let i=1;i<n.pts.length-1;i++){
@@ -1286,7 +917,6 @@ function drawNotes(W,H){
       }
     }
   }
-  _ctxRegion=null;
   ctx.restore();
 }
 function strokeContour(n,x0,x1){
@@ -1388,15 +1018,13 @@ function drawPlayhead(W,H){
    HIT TESTING
    ============================================================ */
 function noteAt(px,py){
-  try{
-  for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; _ctxRegion=regionById(n.region);
+  for(let i=notes.length-1;i>=0;i--){ const n=notes[i];
     const x0=beatToX(n.start), x1=beatToX(n.start+n.dur);
     if(px<x0-6||px>x1+6) continue;
     if(n.type==='hold'){ const y=hzToY(pitchAt(n,0)); if(Math.abs(py-y)<=Math.max(6,view.pxPerSemi*0.5)) return n; }
     else { const f=Math.max(0,Math.min(1,(px-x0)/Math.max(1,x1-x0))); const y=hzToY(pitchAt(n,f)); if(Math.abs(py-y)<=7) return n; }
   }
   return null;
-  } finally { _ctxRegion=null; }
 }
 function pointHitIndex(n,px,py){      // index of the breakpoint under cursor, or -1
   for(let i=0;i<n.pts.length;i++){
@@ -1427,8 +1055,7 @@ function curveHit(n,px,py){
 }
 const HIT_THIN=3.5, HIT_AURA=11;   // crisp center line = segment · soft aura = whole note
 function selectHit(px,py){
-  try{
-  for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; _ctxRegion=regionById(n.region);
+  for(let i=notes.length-1;i>=0;i--){ const n=notes[i];
     const x0=beatToX(n.start), x1=beatToX(n.start+Math.max(n.dur,1e-4));
     if(px<x0-HIT_AURA||px>x1+HIT_AURA) continue;
     if(n.type==='hold'){
@@ -1445,7 +1072,6 @@ function selectHit(px,py){
     if(ch.dist<=HIT_AURA) return {note:n,kind:'note'};
   }
   return null;
-  } finally { _ctxRegion=null; }
 }
 
 /* ============================================================
@@ -1462,27 +1088,10 @@ cv.addEventListener('pointerdown',e=>{
   const t=view.tool;
   if(t==='pan'||e.button===1||spaceDown){ drag={mode:'pan',sx:p.x,sy:p.y,ox:view.scrollX,oy:view.scrollY}; stage.classList.add('tool-pan'); return; }
 
-  // boundary merge handles: grab a region edge to cannibalize the neighbor (snap differs per handle)
-  { const bh=boundaryHandleAt(p); if(bh){ const prev = bh.mode==='end' ? regions.reduce((s,r)=>s+regionSecLen(r),0) : regionStartSec(regions[bh.i+1]);
-      drag={mode:'boundary', i:bh.i, snap:bh.mode, preview:prev}; return; } }
-
-  // contiguous canvas: clicking into a region focuses it (its looks show); editing continues in it
-  { const r=regionAtX(p.x); if(r && r.id!==activeRegionId) focusRegion(r.id);
-    const pr=pitchRegionAtSec(xToSec(p.x)); if(pr && pr.id!==activePitchRegionId) focusPitchRegion(pr.id); }
-
-  if(t==='slice'){ const r=regionAtX(p.x); if(!r) return;
-    if(selBand==='box'){ flash('box band doesn\u2019t slice \u2014 pick time, pitch, or region'); return; }
-    const snappedBeat=snapBeat(xToBeat(p.x));
-    const snappedSec=beatToSecIn(snappedBeat, activeRegion());
-    if(selBand==='vertical'||selBand==='region'){ splitRegionAt(r, snappedBeat); }
-    if(selBand==='horizontal'||selBand==='region'){ splitPitchAt(snappedSec); }
-    return; }
-
   // PEN: click to place successive points (double-click / Enter / Esc to finish)
   if(t==='pen'){
     const hz=snapPitchHz(yToHz(p.y));
-    const penHome = penNote ? regionById(penNote.region) : activeRegion();
-    let beat=xToBeatSnappedIn(p.x, penHome);
+    let beat=clampBeatToContent(snapBeat(xToBeat(p.x)));
     if(!penNote){
       pushHistory();
       penRaw=[{beat,hz}];
@@ -1495,7 +1104,7 @@ cv.addEventListener('pointerdown',e=>{
       const lx=beatToX(penNote.start+penNote.pts[penNote.pts.length-1].t*penNote.dur), ly=hzToY(lp.hz);
       if(Math.hypot(p.x-lx,p.y-ly)<9){ finalizePen(); return; }
       if(beat<=lp.beat) beat=lp.beat + 1/settings.grid;   // keep time monotonic
-      beat=clampBeatIn(beat, penHome);
+      beat=clampBeatToContent(beat);
       penRaw.push({beat,hz}); rebuildPoints(penNote,penRaw); penNote.voice=autoVoice(penNote);
     }
     changed(); return;
@@ -1543,14 +1152,14 @@ cv.addEventListener('pointerdown',e=>{
     } else {
       const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
       if(marqMode==='replace') clearGran();
-      drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand};
+      drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode};
     }
     changed(); return;
   }
 
   // creation tools
   dragHist=histSnapshot();
-  const beat=xToBeatSnappedIn(p.x, activeRegion());
+  const beat=clampBeatToContent(snapBeat(xToBeat(p.x)));
   const hz=snapPitchHz(yToHz(p.y));
   if(t==='hold'){
     const n={id:NID++, start:beat, dur:settings.defLen, type:'hold', vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
@@ -1582,9 +1191,7 @@ function finalizePen(){
   penNote=null; penRaw=null; changed();
 }
 
-function holdEdge(n,px){ const prev=_ctxRegion; _ctxRegion=regionById(n.region);
-  try{ const x1=beatToX(n.start+n.dur); if(Math.abs(px-x1)<7) return 'end'; const x0=beatToX(n.start); if(Math.abs(px-x0)<7) return 'start'; return null; }
-  finally{ _ctxRegion=prev; } }
+function holdEdge(n,px){ const x1=beatToX(n.start+n.dur); if(Math.abs(px-x1)<7) return 'end'; const x0=beatToX(n.start); if(Math.abs(px-x0)<7) return 'start'; return null; }
 function snapshot(n){ return JSON.parse(JSON.stringify(n)); }
 function startGroupMove(p){
   const targets=new Map();
@@ -1612,7 +1219,7 @@ function deleteSelection(){
   for(const [n,set] of ptSel){ if(!notes.includes(n)) continue; if(!removePoints(n,set)) notes=notes.filter(x=>x!==n); }
   clearGran();
 }
-function clampBeatToContent(b){ return clampBeatIn(b, activeRegion()); }   // content-wide (all regions), in active units
+function clampBeatToContent(b){ return Math.max(0,Math.min(totalBeats(),b)); }
 // voice = lowest positive integer whose notes don't overlap this one's time-span ("y-axis intersection")
 function overlap(aS,aE,bS,bE){ return aS < bE-1e-9 && bS < aE-1e-9; }
 function autoVoice(note){
@@ -1633,40 +1240,33 @@ cv.addEventListener('pointermove',e=>{
   const d=drag;
   if(d.mode==='pan'){ view.scrollX=d.ox-(p.x-d.sx); view.scrollY=d.oy-(p.y-d.sy); clampScroll(); draw(); return; }
   if(d.mode==='scrollGutter'){ if(d.axis==='x') view.scrollX=d.ox-(p.x-d.sx); else view.scrollY=d.oy-(p.y-d.sy); clampScroll(); draw(); return; }
-  if(d.mode==='boundary'){ d.preview=snapBoundarySec(xToSec(p.x), d.i, d.snap); draw();
-    const x=secToX(d.preview); ctx.save(); ctx.strokeStyle=col('--ember'); ctx.lineWidth=2; ctx.setLineDash([4,3]);
-    ctx.beginPath(); ctx.moveTo(x,GUT_T); ctx.lineTo(x,cv.clientHeight); ctx.stroke(); ctx.restore(); return; }
 
-  if(d.mode==='newHoldLen'){ const b=xToBeatSnappedIn(p.x, regionById(d.note.region)); d.note.dur=Math.max(1/settings.grid, b-d.baseStart || settings.defLen); if(d.note.dur<=0) d.note.dur=settings.defLen; d.note.voice=autoVoice(d.note); draw(); updateStatus(); return; }
+  if(d.mode==='newHoldLen'){ const b=clampBeatToContent(snapBeat(xToBeat(p.x))); d.note.dur=Math.max(1/settings.grid, b-d.baseStart || settings.defLen); if(d.note.dur<=0) d.note.dur=settings.defLen; d.note.voice=autoVoice(d.note); draw(); updateStatus(); return; }
   if(d.mode==='newGlide'){
-    const b=xToBeatSnappedIn(p.x, regionById(d.note.region)); const hz=snapPitchHz(yToHz(p.y));
+    const b=clampBeatToContent(snapBeat(xToBeat(p.x))); const hz=snapPitchHz(yToHz(p.y));
     d.note.dur=Math.max(1/settings.grid, Math.abs(b-d.baseStart)||settings.defLen);
     if(b<d.baseStart){ d.note.start=b; d.note.pts=[{t:0,hz},{t:1,hz:d.startHz}]; }
     else { d.note.start=d.baseStart; d.note.pts=[{t:0,hz:d.startHz},{t:1,hz}]; }
     d.note.voice=autoVoice(d.note); draw(); updateStatus(); return;
   }
   if(d.mode==='newFree'){
-    const b=xToBeatClampedIn(p.x, regionById(d.note.region)); const hz=snapPitchHz(yToHz(p.y));
+    const b=clampBeatToContent(xToBeat(p.x)); const hz=snapPitchHz(yToHz(p.y));
     if(b>d.baseStart){ d.raw.push({beat:b,hz}); rebuildFree(d.note,d.raw); d.note.voice=autoVoice(d.note); }
     draw(); updateStatus(); return;
   }
   if(d.mode==='ptMove'){
-    const rawDm=-(p.y-d.sy)/view.pxPerSemi;
-    const upsA=upsOf(activeRegion());
-    const rawDbA=(p.x-d.sx)/view.pxPerSec*upsA;                                   // delta in ACTIVE units, for rigid grid-snapping
-    let dSec=(settings.snapTime ? Math.round(rawDbA*settings.grid)/settings.grid : rawDbA)/upsA;   // one seconds delta moves the whole group rigidly
-    let loS=-Infinity, hiS=Infinity;
-    for(const [n,t] of d.targets){ const home=regionById(n.region), u=upsOf(home), s0=regionStartSec(home);
-      const abs=t.abs, sel=t.sel, last=abs.length-1, minStepS=(1/Math.max(settings.grid,8))/u;
+    const rawDb=(p.x-d.sx)/view.pxPerBeat, rawDm=-(p.y-d.sy)/view.pxPerSemi;
+    let dB = settings.snapTime ? Math.round(rawDb*settings.grid)/settings.grid : rawDb;   // delta-snapped time keeps the group rigid
+    const minStep=1/Math.max(settings.grid,8); let loB=-Infinity, hiB=Infinity;
+    for(const t of d.targets.values()){ const abs=t.abs, sel=t.sel, last=abs.length-1;
       for(let i=0;i<abs.length;i++){ if(!sel.has(i)) continue;
-        const aS=s0+abs[i].beat/u;
-        hiS=Math.min(hiS, totalSec()-aS); loS=Math.max(loS, -aS);
-        if(i<last && !sel.has(i+1)) hiS=Math.min(hiS,(abs[i+1].beat-abs[i].beat)/u-minStepS);
-        if(i>0   && !sel.has(i-1)) loS=Math.max(loS,-((abs[i].beat-abs[i-1].beat)/u-minStepS));
+        hiB=Math.min(hiB, totalBeats()-abs[i].beat); loB=Math.max(loB, -abs[i].beat);
+        if(i<last && !sel.has(i+1)) hiB=Math.min(hiB,(abs[i+1].beat-abs[i].beat)-minStep);
+        if(i>0   && !sel.has(i-1)) loB=Math.max(loB,-((abs[i].beat-abs[i-1].beat)-minStep));
       }
     }
-    dSec=Math.max(loS,Math.min(hiS,dSec));
-    for(const [n,t] of d.targets){ const dB=dSec*upsOf(regionById(n.region)); const abs=t.abs, sel=t.sel;
+    dB=Math.max(loB,Math.min(hiB,dB));
+    for(const [n,t] of d.targets){ const abs=t.abs, sel=t.sel;
       const na=abs.map((a,i)=> sel.has(i)
         ? {beat:a.beat+dB, hz:settings.snapPitch?snapPitchHz(midiToFreq(freqToMidi(a.hz,settings.a4)+rawDm,settings.a4)):midiToFreq(freqToMidi(a.hz,settings.a4)+rawDm,settings.a4), curve:a.curve}
         : {beat:a.beat, hz:a.hz, curve:a.curve});
@@ -1677,24 +1277,19 @@ cv.addEventListener('pointermove',e=>{
     draw(); updateStatus(); return;
   }
   if(d.mode==='move'){
-    const home=regionById(d.note.region), u=upsOf(home), s0=regionStartSec(home);
-    const ds=(p.x-d.sx)/view.pxPerSec, dm=-(p.y-d.sy)/view.pxPerSemi;
-    let sSec=s0+d.o.start/u+ds;
-    sSec=snapSecToChart(sSec);                                  // differential snap: the grid under the start
-    const durSec=Math.max(d.o.dur,1e-4)/u;
-    sSec=Math.max(0,Math.min(totalSec()-durSec,sSec));
-    d.note.start=(sSec-s0)*u;                                   // stored in HOME units; deriveHang re-homes on release
+    const db=(p.x-d.sx)/view.pxPerBeat, dm=-(p.y-d.sy)/view.pxPerSemi;
+    let ns=d.o.start+db; if(settings.snapTime) ns=snapBeat(ns);
+    d.note.start=clampBeatToContent(ns);
     const shift=settings.snapPitch?Math.round(dm):dm;
     d.note.pts=d.o.pts.map(q=>{ const o={t:q.t, hz:midiToFreq(freqToMidi(q.hz,settings.a4)+shift,settings.a4)}; if(q.curve) o.curve=q.curve; return o; });
     draw(); updateStatus(); return;
   }
   if(d.mode==='segMove'){
     const n=d.note, seg=d.seg, last=d.absPts.length-1;
-    const home=regionById(n.region);
-    const rawDb=(p.x-d.sx)/pxPerBeatIn(home), rawDm=-(p.y-d.sy)/view.pxPerSemi;
+    const rawDb=(p.x-d.sx)/view.pxPerBeat, rawDm=-(p.y-d.sy)/view.pxPerSemi;
     // proposed new absolute positions for the two endpoints
     const mk=(i)=>{
-      let beat=clampBeatIn(snapBeatIn(d.absPts[i].beat+rawDb,home),home);
+      let beat=clampBeatToContent(snapBeat(d.absPts[i].beat+rawDb));
       let hz=snapPitchHz(midiToFreq(freqToMidi(d.absPts[i].hz,settings.a4)+rawDm,settings.a4));
       return {beat,hz,curve:d.absPts[i].curve};
     };
@@ -1710,14 +1305,14 @@ cv.addEventListener('pointermove',e=>{
     draw(); updateStatus(); return;
   }
   if(d.mode==='resize'){
-    const n=d.note, home=regionById(n.region);
+    const n=d.note;
     if(n.type==='hold'){
-      if(d.ep==='end'){ const b=xToBeatSnappedIn(p.x,home); n.dur=Math.max(1/settings.grid,b-n.start); }
-      else { const b=xToBeatSnappedIn(p.x,home); const end=d.o.start+d.o.dur; n.start=Math.min(b,end-1/settings.grid); n.dur=end-n.start; }
+      if(d.ep==='end'){ const b=clampBeatToContent(snapBeat(xToBeat(p.x))); n.dur=Math.max(1/settings.grid,b-n.start); }
+      else { const b=clampBeatToContent(snapBeat(xToBeat(p.x))); const end=d.o.start+d.o.dur; n.start=Math.min(b,end-1/settings.grid); n.dur=end-n.start; }
     } else {
       const idx=d.ptIdx, last=n.pts.length-1;
       const hz=snapPitchHz(yToHz(p.y));
-      const b=xToBeatSnappedIn(p.x,home);
+      const b=clampBeatToContent(snapBeat(xToBeat(p.x)));
       if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-1/settings.grid); n.dur=end-n.start; n.pts[0]={...n.pts[0],hz}; }
       else if(idx===last){ n.dur=Math.max(1/settings.grid,b-n.start); n.pts[last]={...n.pts[last],hz}; }
       else { // interior point — move in (t,hz) between its neighbors, note extent unchanged
@@ -1763,10 +1358,6 @@ function hoverFeedback(p){
 cv.addEventListener('pointerup',e=>{
   if(drag){
     if(drag.mode==='marquee'){ commitMarquee(drag); }
-    if(drag.mode==='boundary'){ pushHistory();
-      if(drag.snap==='end') resizeLastRegion(drag.preview); else moveBoundary(drag.i, drag.preview);
-      flash(drag.snap==='end'?'piece end moved':'boundary moved'); }
-    if(!['marquee','boundary','pan','scrollGutter'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
     if((drag.mode==='newGlide'||drag.mode==='newFree'||drag.mode==='newHoldLen')){
       // discard zero-length frees
       if(drag.note.type==='free' && drag.note.pts.length<2){ notes=notes.filter(n=>n!==drag.note); }
@@ -1792,7 +1383,7 @@ cv.addEventListener('dblclick',e=>{
   }
   // insert a point on the body at the cursor
   pushHistory();
-  const t=Math.max(0.0001,Math.min(0.9999,(xToBeatIn(p.x,regionById(hit.region))-hit.start)/Math.max(1e-6,hit.dur)));
+  const t=Math.max(0.0001,Math.min(0.9999,(xToBeat(p.x)-hit.start)/Math.max(1e-6,hit.dur)));
   const hz=snapPitchHz(yToHz(p.y));
   let i=0; while(i<hit.pts.length && hit.pts[i].t<t) i++;
   hit.pts.splice(i,0,{t,hz});
@@ -1800,43 +1391,20 @@ cv.addEventListener('dblclick',e=>{
   changed();
 });
 
-function marqueeRect(d, forDraw){
-  let x=Math.min(d.sx,d.x2), y=Math.min(d.sy,d.y2), w=Math.abs(d.x2-d.sx), h=Math.abs(d.y2-d.sy);
-  const band=d.band||'box';
-  if(band==='vertical'){          // time span — pin pitch axis to full extent
-    if(forDraw){ y=GUT_T; h=Math.max(0,cv.clientHeight-GUT_T); } else { y=-1e6; h=2e6; }
-  } else if(band==='horizontal'){ // pitch span — pin time axis to full extent
-    if(forDraw){ x=GUT_L; w=Math.max(0,cv.clientWidth-GUT_L); } else { x=-1e6; w=2e6; }
-  } else if(band==='region'){     // whole regions — x snaps out to the regions touched, y pinned to full extent
-    const sA=Math.max(0,clampSecToContent(xToSec(Math.min(d.sx,d.x2)))-1e-9);
-    const sB=Math.max(0,clampSecToContent(xToSec(Math.max(d.sx,d.x2)))-1e-9);
-    const rA=regionAtSec(sA), rB=regionAtSec(sB);
-    const x0=secToX(regionStartSec(rA)), x1=secToX(regionStartSec(rB)+regionSecLen(rB));
-    x=x0; w=Math.max(0,x1-x0);
-    if(forDraw){ y=GUT_T; h=Math.max(0,cv.clientHeight-GUT_T); } else { y=-1e6; h=2e6; }
-  }
-  return {x,y,w,h};
-}
 function drawMarquee(d){
-  const {x,y,w,h}=marqueeRect(d,true);
+  const x=Math.min(d.sx,d.x2), y=Math.min(d.sy,d.y2), w=Math.abs(d.x2-d.sx), h=Math.abs(d.y2-d.sy);
   ctx.save(); ctx.strokeStyle=col('--tide'); ctx.fillStyle='rgba(17,137,126,0.08)'; ctx.lineWidth=1;
   ctx.fillRect(x,y,w,h); ctx.strokeRect(x+.5,y+.5,w,h); ctx.restore();
 }
 function commitMarquee(d){
-  const {x,y,w,h}=marqueeRect(d,false);
-  const band=d.band||'box', sweptW=Math.abs(d.x2-d.sx), sweptH=Math.abs(d.y2-d.sy);
-  if(band==='box'   && sweptW<3 && sweptH<3) return;   // require a real sweep on the active axis
-  if(band==='vertical'   && sweptW<3) return;
-  if(band==='horizontal' && sweptH<3) return;
-  // region band: even a bare click selects everything in the region under it — no sweep required
+  const x=Math.min(d.sx,d.x2), y=Math.min(d.sy,d.y2), w=Math.abs(d.x2-d.sx), h=Math.abs(d.y2-d.sy);
+  if(w<3&&h<3) return;
   const mode=d.marqMode||'replace';
   if(mode==='replace'){ selection.clear(); ptSel=new Map(); }
   segSel=null; pointSel=null;
   const op = (mode==='subtract') ? 'sub' : 'add';          // replace + add both union (replace pre-cleared)
-  // collect point indices hit by an intersected segment (curve), then merge — each note tested in its own chart
-  try{
+  // collect point indices hit by an intersected segment (curve), then merge
   for(const n of notes){
-    _ctxRegion=regionById(n.region);
     const nx0=beatToX(n.start), nx1=beatToX(n.start+Math.max(n.dur,1e-4));
     if(nx1<x-2||nx0>x+w+2) continue;
     let hit=new Set();
@@ -1845,7 +1413,6 @@ function commitMarquee(d){
     if(!hit.size) continue;
     mergeSel(n, hit, op);
   }
-  } finally { _ctxRegion=null; }
 }
 
 /* ---- wheel: scroll / zoom ---- */
@@ -1855,7 +1422,7 @@ cv.addEventListener('wheel',e=>{
     const p=evtPos(e); const f=e.deltaY<0?1.12:1/1.12;
     // zoom both, keep cursor anchored
     const beatAt=xToBeat(p.x), midiAt=yToMidi(p.y);
-    view.pxPerSec=clamp(view.pxPerSec*f,16,4000);
+    view.pxPerBeat=clamp(view.pxPerBeat*f,8,400);
     view.pxPerSemi=clamp(view.pxPerSemi*f,3,60);
     view.scrollX = (beatAt*view.pxPerBeat) - (p.x-GUT_L);
     view.scrollY = (view.midiMax-midiAt)*view.pxPerSemi - (p.y-GUT_T);
@@ -1879,24 +1446,10 @@ function setTool(t){ if(penNote && t!=='pen') finalizePen(); view.tool=t;
   stage.className='stage tool-'+t; cv.style.cursor=''; changed();
 }
 document.querySelectorAll('#timeRegime button').forEach(b=>b.addEventListener('click',()=>{
-  view.timeRegime=b.dataset.r; document.querySelectorAll('#timeRegime button').forEach(x=>x.classList.toggle('on',x===b)); regimePill();
-  // consequential: convert the ACTIVE region's coordinate system (extent + notes conserved in seconds)
-  const want = b.dataset.r==='time' ? 'chronological' : 'metered';
-  const m=mainSystem();
-  if(m.kind!==want){
-    pushHistory();
-    relabelActiveRegion(mm=>{
-      if(want==='chronological'){ mm.kind='chronological'; }
-      else { mm.kind='metered'; mm.bpm=+bpm.value||120; mm.sigNum=+sigNum.value||4; mm.sigDen=+sigDen.value||4; }
-    });
-    updateRegionIndicator(); flash(want==='chronological'?'region → free time':'region → metered');
-  }
-  draw();
+  view.timeRegime=b.dataset.r; document.querySelectorAll('#timeRegime button').forEach(x=>x.classList.toggle('on',x===b)); regimePill(); draw();
 }));
 document.querySelectorAll('#pitchRegime button').forEach(b=>b.addEventListener('click',()=>{
-  view.pitchRegime=b.dataset.r; document.querySelectorAll('#pitchRegime button').forEach(x=>x.classList.toggle('on',x===b));
-  const pr=activePitchRegion(); if(pr) pr.regime=b.dataset.r;   // regime is a property of the focused pitch region
-  regimePill(); draw();
+  view.pitchRegime=b.dataset.r; document.querySelectorAll('#pitchRegime button').forEach(x=>x.classList.toggle('on',x===b)); regimePill(); draw();
 }));
 function regimePill(){ document.getElementById('pillRegime').textContent =
   (view.timeRegime==='meter'?timeShort():'time')+' · '+(view.pitchRegime==='scale'?scaleShort():'freq'); }
@@ -1931,9 +1484,7 @@ function populateScaleSelect(){
   scaleSel.value=activeScaleId;
 }
 function prettyName(path){ return path.split('/').pop().replace(/\.scl$/i,'').replace(/[_-]+/g,' '); }
-function setActiveScale(id){ if(!SCALES[id]) return; activeScaleId=id; activeScale=SCALES[id]; scaleSel.value=id;
-  const pr=activePitchRegion(); if(pr) pr.scaleId=id;   // the scale is a property of the focused pitch region
-  regimePill(); changed(); }
+function setActiveScale(id){ if(!SCALES[id]) return; activeScaleId=id; activeScale=SCALES[id]; scaleSel.value=id; regimePill(); changed(); }
 scaleSel.addEventListener('change',async()=>{
   const v=scaleSel.value;
   if(v.startsWith('lib:')){
@@ -2117,7 +1668,7 @@ function pasteNotes(list){
   const targetBeat = lastMouse.inside ? clampBeatToContent(snapBeat(xToBeat(lastMouse.x))) : (playhead!=null?playhead:0);
   const minStart=Math.min(...list.map(n=>n.start)); const delta=targetBeat-minStart;
   pushHistory(); selection.clear(); ptSel=new Map();
-  for(const cn of list){ const n=deepNote(cn); n.id=NID++; n.region=activeRegion().id; n.start=clampBeatToContent(cn.start+delta); deriveHang(n); notes.push(n); selection.add(n.id); }
+  for(const cn of list){ const n=deepNote(cn); n.id=NID++; n.start=clampBeatToContent(cn.start+delta); notes.push(n); selection.add(n.id); }
   changed();
 }
 async function doPaste(){
@@ -2127,51 +1678,30 @@ async function doPaste(){
 function doDuplicate(){ const sel=selectedNotes(); if(!sel.length) return;
   const span=Math.max(...sel.map(n=>n.start+n.dur))-Math.min(...sel.map(n=>n.start));
   const off=Math.max(span, 1/settings.grid); pushHistory(); selection.clear(); ptSel=new Map();
-  for(const s of sel){ const n=deepNote(s); n.id=NID++; n.region=s.region; n.start=clampBeatIn(s.start+off, regionById(s.region)); deriveHang(n); notes.push(n); selection.add(n.id); }
+  for(const s of sel){ const n=deepNote(s); n.id=NID++; n.start=clampBeatToContent(s.start+off); notes.push(n); selection.add(n.id); }
   changed(); flash('duplicated');
 }
 document.getElementById('cutBtn').onclick=doCut;
 document.getElementById('copyBtn').onclick=doCopy;
 document.getElementById('pasteBtn').onclick=doPaste;
 
-document.getElementById('zxIn').onclick =()=>{view.pxPerSec=clamp(view.pxPerSec*1.25,16,4000);clampScroll();draw();};
-document.getElementById('zxOut').onclick=()=>{view.pxPerSec=clamp(view.pxPerSec/1.25,16,4000);clampScroll();draw();};
+document.getElementById('zxIn').onclick =()=>{view.pxPerBeat=clamp(view.pxPerBeat*1.25,8,400);clampScroll();draw();};
+document.getElementById('zxOut').onclick=()=>{view.pxPerBeat=clamp(view.pxPerBeat/1.25,8,400);clampScroll();draw();};
 document.getElementById('zyIn').onclick =()=>{view.pxPerSemi=clamp(view.pxPerSemi*1.25,3,60);clampScroll();draw();};
 document.getElementById('zyOut').onclick=()=>{view.pxPerSemi=clamp(view.pxPerSemi/1.25,3,60);clampScroll();draw();};
 document.getElementById('zFit').onclick=fitContent;
 function fitContent(){
-  if(notes.length){ let lo=Infinity,hi=-Infinity;
-    notes.forEach(n=>{ const[a,b]=noteMinMaxHz(n); lo=Math.min(lo,a); hi=Math.max(hi,b); });
+  if(notes.length){ let lo=Infinity,hi=-Infinity,maxB=0;
+    notes.forEach(n=>{ const[a,b]=noteMinMaxHz(n); lo=Math.min(lo,a); hi=Math.max(hi,b); maxB=Math.max(maxB,n.start+n.dur); });
     const mLo=freqToMidi(lo,settings.a4)-2, mHi=freqToMidi(hi,settings.a4)+2;
     view.pxPerSemi=clamp((cv.clientHeight-GUT_T)/(mHi-mLo),3,40);
-    const totalSec=regions.reduce((s,r)=>s+regionSecLen(r),0)||1;
-    view.pxPerSec=clamp((cv.clientWidth-GUT_L)/(totalSec*1.05),16,4000);
+    view.pxPerBeat=clamp((cv.clientWidth-GUT_L)/(maxB+1),8,200);
     view.scrollY=(view.midiMax-mHi)*view.pxPerSemi; view.scrollX=0;
   } else { view.scrollY=(view.midiMax-72)*view.pxPerSemi-(cv.clientHeight-GUT_T)/2; view.scrollX=0; }
   clampScroll(); draw();
 }
 
-/* GOLDEN RULE: the extent (seconds) changes only explicitly — boundary drag or the bars input.
-   bpm / sig edits are RELABELINGS: the span stays put, bars remap onto it, notes freeze in seconds. */
-function relabelActiveRegion(fn){
-  const r=activeRegion(), m=mainSystem(r);
-  const secLen=regionSecLen(r), rs=regionStartSec(r);
-  const spb=m.kind==='chronological'?1:60/m.bpm;
-  const abs=notes.filter(n=>n.region===r.id).map(n=>({n, sec:rs+n.start*spb, endSec:rs+(n.start+(n.dur||0))*spb}));
-  const hangPre=new Map();
-  for(const n of notes){ if(n.end&&n.end.region===r.id) hangPre.set(n, rs+n.end.beat*spb); }
-  fn(m);                                                       // apply the edit (new bpm / sig / kind from controls)
-  m.bars = (m.kind==='chronological') ? secLen : secLen/((m.sigNum||4)*60/m.bpm);   // extent conserved: units remap onto it
-  const ups2=m.kind==='chronological'?1:m.bpm/60;
-  for(const {n,sec,endSec} of abs){ n.start=(sec-rs)*ups2; n.dur=Math.max(1e-4,(endSec-sec)*ups2); }  // notes frozen in time
-  for(const [n,endSec] of hangPre){ n.end.beat=(endSec-rs)*ups2; }                                     // hangs frozen in time too
-  applyRegionToControls(r);
-}
-[bpm,sigNum,sigDen].forEach(el=>el.addEventListener('change',()=>{
-  relabelActiveRegion(m=>{ m.bpm=+bpm.value||120; m.sigNum=+sigNum.value||4; m.sigDen=+sigDen.value||4; });
-  changed(); clampScroll(); draw();
-}));
-[a4,bars].forEach(el=>el.addEventListener('change',()=>{syncRegionFromControls();changed();clampScroll();draw();}));   // bars = the explicit extent edit
+[bpm,sigNum,sigDen,a4,bars].forEach(el=>el.addEventListener('change',()=>{clampScroll();draw();}));
 bendRange.addEventListener('input',()=>{document.getElementById('pillRange').textContent='±'+settings.range;});
 
 /* ---- voice manual control ---- */
@@ -2256,10 +1786,6 @@ document.querySelectorAll('#selModeSeg button').forEach(b=>b.addEventListener('c
   selMode=b.dataset.m;
   document.querySelectorAll('#selModeSeg button').forEach(x=>x.classList.toggle('on',x===b));
 }));
-document.querySelectorAll('#selBandSeg button').forEach(b=>b.addEventListener('click',()=>{
-  selBand=b.dataset.b;
-  document.querySelectorAll('#selBandSeg button').forEach(x=>x.classList.toggle('on',x===b));
-}));
 document.getElementById('undoBtn').onclick=undo;
 document.getElementById('redoBtn').onclick=redo;
 
@@ -2316,7 +1842,6 @@ function renderVoiceUI(){
    STATUS + LIFECYCLE
    ============================================================ */
 function changed(){
-  ensureRegions(); syncRegionFromControls(); normalizeNotes(); updateRegionIndicator();
   if(segSel && !notes.includes(segSel.note)) segSel=null;
   if(pointSel && !notes.includes(pointSel.note)) pointSel=null;
   if(ptSel.size){ for(const n of [...ptSel.keys()]) if(!notes.includes(n)) ptSel.delete(n); }
@@ -2485,38 +2010,38 @@ document.getElementById('report').onclick=()=>{
    relations, landmarks, ranges, or the recursion. */
 document.getElementById('expJson').onclick=()=>{
   if(!notes.length){ flash('nothing to export'); return; }
-  ensureRegions(); activeRegion().notes=notes; syncRegionFromControls(); normalizeNotes();
-  const noteEvent=n=>{
-    const ev={ position:{ at:+n.start.toFixed(4) },
-               extent: (n.end&&n.end.region) ? { until:{ event:n.end.region, coord:+n.end.beat.toFixed(4) } }
-                                             : { duration:+n.dur.toFixed(4) },
+  const ns=notes.slice().sort((a,b)=>(a.voice||1)-(b.voice||1)||a.start-b.start);
+  const events=ns.map(n=>{
+    const ev={ position:{ at:+n.start.toFixed(4) }, extent:{ duration:+n.dur.toFixed(4) },
                payload:{ voice:n.voice||1, velocity:n.vel } };
     if(n.type==='hold'){ ev.value={ pitch:{ hz:+pitchAt(n,0).toFixed(3) } }; }
     else if(n.type==='glide' && n.pts.length===2){
       ev.value={ pitch:{ from:+pitchAt(n,0).toFixed(3), to:+pitchAt(n,1).toFixed(3) } };
       const c=segCurve(n,0); if(c && c!=='linear') ev.payload.curve=c;
-    } else {
+    } else { // multi-point / freehand: determinate envelope in value, full contour in payload
       ev.value={ pitch:{ from:+pitchAt(n,0).toFixed(3), to:+pitchAt(n,1).toFixed(3) } };
       ev.payload.contour = n.pts.map((p,i)=>{ const o={pos:+p.t.toFixed(4), hz:+p.hz.toFixed(3)}; if(n.type==='glide' && i<n.pts.length-1) o.curve=segCurve(n,i); return o; });
     }
     return ev;
-  };
-  const score = regions.map(r=>{
-    const m=mainSystem(r);
-    const rNotes=(r.notes||[]).slice().sort((a,b)=>(a.voice||1)-(b.voice||1)||a.start-b.start);
-    const voices=[...new Set(rNotes.map(n=>n.voice||1))].sort((a,b)=>a-b);
-    const beats=Math.max(1, Math.ceil(Math.max(0,...rNotes.map(n=>n.start+n.dur))));
-    const frame={ temporal:'metered',
-      temporalSettings:{ beats, bpm:m.bpm, timeSignature:(m.sigNum||4)+'/'+(m.sigDen||4) },
-      axis:'frequency', axisSettings:{ a4:m.a4 } };
-    if(m.offset) frame.temporalSettings.offset=m.offset;
-    return { id:r.id, role:'regime', frame,
+  });
+  const voices=[...new Set(ns.map(n=>n.voice||1))].sort((a,b)=>a-b);
+  const doc={
+    projectName:'TabotaRoll',
+    languageVersion:'2.0',
+    metadata:{ profile:'determinate' },
+    score:[{
+      id:'TabotaRoll', role:'regime',
+      frame:{
+        temporal:'metered',
+        temporalSettings:{ beats:totalBeats(), bpm:settings.bpm, timeSignature:settings.sigNum+'/'+settings.sigDen },
+        axis:'frequency', axisSettings:{ a4:settings.a4 }
+      },
       payload:{ voices, midiExport:{ rule:'monophonic-per-voice', voiceToChannel:'voice N → base channel + (N-1)', bendRange:settings.range } },
-      events: rNotes.map(noteEvent) };
-  }).filter(s=>s.events.length || regions.length===1);
-  const doc={ projectName:'TabotaRoll', languageVersion:'2.0', metadata:{ profile:'determinate' }, score };
+      events
+    }]
+  };
   download(new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),'tabota-roll.json');
-  flash('exported Tabota v2 JSON ('+regions.length+' region'+(regions.length!==1?'s':'')+')');
+  flash('exported Tabota v2 JSON ('+voices.length+' voice'+(voices.length!==1?'s':'')+')');
 };
 
 /* Tabota JSON import — reconstruct notes/voices/curves. Reads v2 (the format the
@@ -2572,67 +2097,76 @@ function _notesFromV1(doc){
   const bend=(doc.midiExport && +doc.midiExport.bendRange)||null;
   return {notes:out, bpm, sig, a4, skipped, bend};
 }
-/* ---- v2 reader: an ADAPTER over the shared interpreter (tabota-resolve.js).
-   The Roll no longer interprets Tabota itself — it asks resolve() where everything
-   is, then keeps only its receptor's slice (pitched material placed in seconds) and
-   converts that to its beat-based note model. Points, achronous/ordinal, bands,
-   relational cycles and indeterminate things are dropped (counted as skipped);
-   index.html, with the same resolve(), draws them. ---- */
+/* ---- v2 reader: walk the Event tree, inherit frames, take the determinate fragment ---- */
+function _frameOf(ev, inh){
+  const f=ev.frame||{}; const ts=f.temporalSettings||{}, as=f.axisSettings||{};
+  let sig=inh.sig;
+  if(ts.timeSignature){ const p=String(ts.timeSignature).split('/'); sig=[+p[0]||4, +p[1]||4]; }
+  return {
+    temporal: f.temporal||inh.temporal,
+    bpm: ts.bpm!=null?+ts.bpm:inh.bpm,
+    bpmsr: sig[0]||4, sig,
+    axis: f.axis||inh.axis,
+    a4: as.a4!=null?+as.a4:inh.a4
+  };
+}
+function _leafToNote(ev, fr){
+  const a4=fr.a4||settings.a4, axis=fr.axis||'frequency';
+  const toBeat=v=> fr.temporal==='chronological' ? (v*(fr.bpm||settings.bpm)/60) : (+v||0); // metered already beats
+  const p=ev.position||{};
+  if(p.relations || p.between) return null;                       // not determinate → cannot draw
+  let start;
+  if(p.at!=null) start=toBeat(p.at);
+  else if(p.meter) start=((p.meter.measure-1)*(fr.bpmsr||4))+(+p.meter.beat||0);
+  else if(p.index!=null) start=(+p.index||0)*settings.defLen;
+  else return null;
+  const x=ev.extent||{};
+  let dur;
+  if(x.duration!=null) dur=toBeat(x.duration);
+  else if(x.endAt!=null) dur=toBeat(x.endAt)-start;
+  else if(x.endMeter) dur=(((x.endMeter.measure-1)*(fr.bpmsr||4))+(+x.endMeter.beat||0))-start;
+  else dur=settings.defLen;                                        // open / until / point → default length
+  if(dur<=0) dur=settings.defLen;
+  const pv=ev.value.pitch;
+  if(pv.between || pv.relativeTo) return null;                     // indeterminate pitch → cannot draw
+  const voice=Math.max(1,(ev.payload&&ev.payload.voice)||1);
+  const velo=(ev.payload&&ev.payload.velocity!=null)?ev.payload.velocity:(+vel.value||96);
+  let type, pts, ncurve;
+  const contour = ev.payload && Array.isArray(ev.payload.contour) ? ev.payload.contour : null;
+  if(contour && contour.length){
+    const cs=contour.map(c=>({t:(c.pos!=null?c.pos:c.t)||0, hz:tabotaToHz(c.hz!=null?c.hz:(c.note!=null?c.note:c.yValue),axis,a4), curve:c.curve}))
+                    .filter(c=>c.hz!=null).sort((x,y)=>x.t-y.t);
+    if(cs.length<2) return null;
+    type = cs.some(c=>c.curve) ? 'glide' : 'free';
+    pts = cs.map(c=>{ const o={t:Math.max(0,Math.min(1,c.t)), hz:c.hz}; if(c.curve) o.curve=c.curve; return o; });
+  } else {
+    const sy=tabotaToHz(pv.hz!=null?pv.hz:(pv.note!=null?pv.note:pv.from), axis, a4);
+    let ey=tabotaToHz(pv.to!=null?pv.to:(pv.from!=null?pv.from:(pv.hz!=null?pv.hz:pv.note)), axis, a4);
+    if(ey==null) ey=sy;
+    if(sy==null) return null;
+    if(Math.abs(1200*Math.log2(ey/sy))<0.5){ type='hold'; pts=[{t:0,hz:sy}]; }
+    else { type='glide'; pts=[{t:0,hz:sy},{t:1,hz:ey}]; ncurve=(ev.payload&&ev.payload.curve)||pv.interpolation||'linear'; }
+  }
+  const n={id:NID++, start, dur, type, vel:velo, voice, pts};
+  if(type==='glide' && ncurve) n.curve=ncurve;
+  return n;
+}
 function _notesFromV2(doc){
-  const TR = (typeof window!=='undefined') && window.TabotaResolve;
-  if(!TR || !TR.resolve){
-    flash('resolver (tabota-resolve.js) not loaded — open via a local server');
-    return {notes:[], bpm:settings.bpm, sig:[settings.sigNum,settings.sigDen], a4:settings.a4, skipped:0, bend:null};
+  const out=[]; let skipped=0, bend=null;
+  let gBpm=settings.bpm, gSig=[settings.sigNum,settings.sigDen], gA4=settings.a4;
+  function walk(list, inh){
+    (list||[]).forEach(ev=>{
+      if(!ev||typeof ev!=='object') return;
+      const fr=_frameOf(ev,inh);
+      if((ev.frame||{}).temporal==='metered'){ if(fr.bpm) gBpm=fr.bpm; gSig=fr.sig; }
+      if((ev.frame||{}).axis && fr.a4) gA4=fr.a4;
+      if(ev.payload&&ev.payload.midiExport&&ev.payload.midiExport.bendRange) bend=+ev.payload.midiExport.bendRange;
+      if(ev.value&&ev.value.pitch){ const n=_leafToNote(ev,fr); if(n) out.push(n); else skipped++; }
+      if(ev.events) walk(ev.events, fr);
+    });
   }
-  const R = TR.resolve(doc);
-
-  // master tempo / time-sig / tuning / bend — from the first metered + pitched frame in the doc
-  let mBpm=null,mNum=null,mDen=null,mA4=null,bend=null;
-  (function scan(list){ (list||[]).forEach(e=>{ if(!e||typeof e!=='object') return;
-    const f=e.frame||{}, ts=f.temporalSettings||{}, as=f.axisSettings||{};
-    if(f.temporal==='metered' && ts.bpm!=null && mBpm==null) mBpm=+ts.bpm;
-    if(f.temporal==='metered' && ts.timeSignature && mNum==null){ const p=String(ts.timeSignature).split('/'); mNum=+p[0]||4; mDen=+p[1]||4; }
-    if((f.axis==='frequency'||f.axis==='symbolic') && as.a4!=null && mA4==null) mA4=+as.a4;
-    if(e.payload && e.payload.midiExport && e.payload.midiExport.bendRange) bend=+e.payload.midiExport.bendRange;
-    if(e.events) scan(e.events);
-  }); })(doc.score);
-  const masterBpm=mBpm||settings.bpm, sigNum_=mNum||settings.sigNum, sigDen_=mDen||settings.sigDen, masterA4=mA4||settings.a4;
-  const SPB = masterBpm/60;                         // seconds -> beats of the Roll's single tempo
-
-  const out=[]; let skipped=0;
-  for(const n of R.nodes){
-    if(n.kind==='point'){ skipped++; continue; }    // points: valid Tabota, invisible on the Roll
-    if(n.kind!=='pitch'){ continue; }               // ignore frames, tempo markers, lanes, text
-    if(n.start.sec==null || n.tags.includes('ordinal') || !n.pitch){ skipped++; continue; }
-    const m=n.pitch.mode;
-    if(m!=='hz' && m!=='named' && m!=='glide'){ skipped++; continue; }   // band / relative: not drawable here
-    const start=n.start.sec*SPB;
-    const end=(n.end && n.end.sec!=null)?n.end.sec*SPB:start+settings.defLen;
-    let dur=end-start; if(dur<=0) dur=settings.defLen;
-    const voice=Math.max(1,(n.payload&&n.payload.voice)||1);
-    const velo=(n.payload&&n.payload.velocity!=null)?n.payload.velocity:(+vel.value||96);
-
-    let type, pts, ncurve;
-    const contour = n.payload && Array.isArray(n.payload.contour) ? n.payload.contour : null;
-    if(contour && contour.length>=2){
-      const cs=contour.map(c=>({t:(c.pos!=null?c.pos:c.t)||0, hz:tabotaToHz(c.hz!=null?c.hz:(c.note!=null?c.note:c.yValue),'frequency',masterA4), curve:c.curve}))
-                      .filter(c=>c.hz!=null).sort((a,b)=>a.t-b.t);
-      if(cs.length<2){ skipped++; continue; }
-      type=cs.some(c=>c.curve)?'glide':'free';
-      pts=cs.map(c=>{ const o={t:Math.max(0,Math.min(1,c.t)),hz:c.hz}; if(c.curve)o.curve=c.curve; return o; });
-    } else if(m==='glide'){
-      const a=n.pitch.from, b=n.pitch.to; if(a==null||b==null){ skipped++; continue; }
-      if(Math.abs(1200*Math.log2(b/a))<0.5){ type='hold'; pts=[{t:0,hz:a}]; }
-      else { type='glide'; pts=[{t:0,hz:a},{t:1,hz:b}]; ncurve=(n.payload&&n.payload.curve)||'linear'; }
-    } else {
-      const hz=n.pitch.hz; if(hz==null){ skipped++; continue; }
-      type='hold'; pts=[{t:0,hz}];
-    }
-    const note={id:NID++, start, dur, type, vel:velo, voice, pts};
-    if(type==='glide' && ncurve) note.curve=ncurve;
-    out.push(note);
-  }
-  return {notes:out, bpm:masterBpm, sig:[sigNum_,sigDen_], a4:masterA4, skipped, bend};
+  walk(doc.score, {temporal:'metered',bpm:settings.bpm,bpmsr:settings.sigNum,sig:[settings.sigNum,settings.sigDen],axis:'frequency',a4:settings.a4});
+  return {notes:out, bpm:gBpm, sig:gSig, a4:gA4, skipped, bend};
 }
 function _hasV2Shape(list){
   return Array.isArray(list) && list.some(ev=> ev && (ev.frame || ev.value || ev.position || ev.ref));
@@ -2654,7 +2188,6 @@ impJsonFile.onchange=async()=>{
   bpm.value=Math.round(res.bpm);
   if(res.sig){ sigNum.value=res.sig[0]||4; sigDen.value=res.sig[1]||4; }
   a4.value=res.a4; if(res.bend){ bendRange.value=res.bend; document.getElementById('pillRange').textContent='±'+res.bend; }
-  regions=[makeRegion()]; regions[0].name='Imported'; activeRegionId=regions[0].id; renderRegionTabs();   // fresh region from the imported frame; notes tag to it via normalizeNotes
   NID=Math.max(NID,0,...notes.map(n=>n.id))+1;
   const maxB=Math.max(0,...notes.map(n=>n.start+n.dur));
   bars.value=Math.max(1, Math.ceil((maxB+0.5)/Math.max(1,settings.sigNum)));
@@ -2673,37 +2206,20 @@ function flash(msg){ status.innerHTML=`<span style="color:var(--tide)">${msg}</s
    SEED + BOOT
    ============================================================ */
 function seed(){
-  const a=settings.a4; const semis=x=>a*Math.pow(2,x/12);
-  REGID=1;
-  const A={id:newRegionId(), name:'Intro', main:'m', systems:[{id:'m',kind:'metered',     bpm:120,sigNum:4,sigDen:4,a4:a,bars:2,offset:0,axis:'frequency'}]};   // 4 bars, cut to 2 (measures 3-4 removed)
-  const B={id:newRegionId(), name:'Free',  main:'m', systems:[{id:'m',kind:'chronological',bpm:120,sigNum:4,sigDen:4,a4:a,bars:4,offset:0,axis:'frequency'}]};
-  const C={id:newRegionId(), name:'Coda',  main:'m', systems:[{id:'m',kind:'metered',     bpm:90, sigNum:3,sigDen:4,a4:a,bars:4,offset:0,axis:'frequency'}]};
-  regions=[A,B,C]; activeRegionId=A.id;
-  PRID=1; pitchRegions=[]; activePitchRegionId=null;   // one fresh 12-TET pitch region (built lazily)
+  // demo polyphony + a drawn multi-point glide that rises and falls across several notes
+  const a=settings.a4;
   notes=[
-    // A — metered 4/4 @120, 2 bars (start/dur in beats)
-    {id:NID++,region:A.id,start:0,dur:8,type:'hold', vel:70, voice:2,pts:[{t:0,hz:semis(-5)}]},                              // drone (E4-ish, visible)
-    {id:NID++,region:A.id,start:0,dur:1,type:'hold', vel:100,voice:1,pts:[{t:0,hz:a}]},
-    {id:NID++,region:A.id,start:1,dur:1,type:'hold', vel:100,voice:1,pts:[{t:0,hz:semis(3.5)}]},                              // neutral third
-    {id:NID++,region:A.id,start:2,dur:2,type:'glide',curve:'smooth',vel:100,voice:1,pts:[{t:0,hz:semis(7)},{t:1,hz:semis(12)}]},
-    {id:NID++,region:A.id,start:4,dur:2,type:'glide',vel:95, voice:1,pts:[                                                    // multi-point, per-segment curves
-       {t:0,hz:semis(12),curve:'exp'},{t:.5,hz:semis(8),curve:'log'},{t:1,hz:semis(10)}]},
-    // HYBRID: starts at Intro beat 6, ends 1.0s INTO Free — endpoints on two different charts
-    {id:NID++,region:A.id,start:6,dur:3,type:'glide',curve:'smooth',vel:100,voice:1,
-     end:{region:B.id,beat:1.0},pts:[{t:0,hz:semis(5)},{t:1,hz:semis(14)}]},
-    // B — chronological @4s (start/dur in SECONDS)
-    {id:NID++,region:B.id,start:1.6,dur:0.6,type:'hold', vel:90, voice:1,pts:[{t:0,hz:semis(9)}]},
-    {id:NID++,region:B.id,start:2.6,dur:1.4,type:'glide',curve:'exp',vel:90, voice:1,pts:[{t:0,hz:semis(2)},{t:1,hz:semis(14)}]},
-    // C — metered 3/4 @90 (a slower waltz close)
-    {id:NID++,region:C.id,start:0,dur:1,type:'hold',vel:100,voice:1,pts:[{t:0,hz:semis(12)}]},
-    {id:NID++,region:C.id,start:1,dur:1,type:'hold',vel:90, voice:1,pts:[{t:0,hz:semis(16)}]},
-    {id:NID++,region:C.id,start:2,dur:1,type:'hold',vel:90, voice:1,pts:[{t:0,hz:semis(19)}]},
-    {id:NID++,region:C.id,start:3,dur:3,type:'hold',vel:100,voice:1,pts:[{t:0,hz:semis(24)}]},
+    {id:NID++, start:0, dur:6, type:'hold',  vel:80, voice:1, pts:[{t:0,hz:a/2}]},                         // A3 drone (voice 1)
+    {id:NID++, start:0, dur:1, type:'hold',  vel:100,voice:2, pts:[{t:0,hz:a}]},                            // A4 exact
+    {id:NID++, start:1, dur:1, type:'hold',  vel:100,voice:2, pts:[{t:0,hz:a*Math.pow(2,3.5/12)}]},         // +350¢ neutral third
+    {id:NID++, start:2, dur:2, type:'glide', curve:'smooth', vel:100,voice:2, pts:[{t:0,hz:a},{t:1,hz:a*Math.pow(2,7/12)}]}, // eased glide A4->E5
+    {id:NID++, start:4, dur:2, type:'glide', vel:100,voice:2, pts:[                          // multi-point glide, per-segment curves
+       {t:0,hz:a,curve:'exp'},{t:.25,hz:a*Math.pow(2,4/12),curve:'log'},{t:.5,hz:a*Math.pow(2,-2/12),curve:'smooth'},{t:.75,hz:a*Math.pow(2,5/12),curve:'linear'},{t:1,hz:a}]},
   ];
 }
 populateRoot(); populateScaleSelect(); loadManifest();
 populateCycleSelect(); loadCycManifest();
-window.addEventListener('load',()=>{ resize(); seed(); applyRegionToControls(activeRegion()); updateRegionIndicator(); fitContent(); regimePill(); changed(); });
+window.addEventListener('load',()=>{ resize(); seed(); fitContent(); regimePill(); changed(); });
 resize(); // initial (in case load already fired)
 })();
 </script>
