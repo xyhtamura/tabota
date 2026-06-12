@@ -1,0 +1,4 @@
+! grammar_special717.cyc
+Special point at 0.717 of every quarter -- measured, recursive, local.
+@root: 4 > q
+@q: 0.717 0.283

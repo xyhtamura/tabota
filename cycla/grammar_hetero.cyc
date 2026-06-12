@@ -1,0 +1,5 @@
+! grammar_hetero.cyc
+Heterogeneous thirds -- A halves, B stops, C in thirds.
+@root: 3 > half _ thirds
+@half: 2 > _
+@thirds: 3 > _

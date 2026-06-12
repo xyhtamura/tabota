@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cycla — subdivision grammar builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f1ecf4'/%3E%3Crect x='2.5' y='2.5' width='27' height='27' rx='5.5' fill='%23eaf1ec' stroke='%23cdbcd6' stroke-width='1.2'/%3E%3Ctext x='16' y='22.2' text-anchor='middle' font-family='Georgia, serif' font-size='20' font-weight='700' fill='%235d8c00'%3E田%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  --paper:#eaf1ec; --note-bg:#e3ebe6; --panel:#f1ecf4; --panel-2:#e7dfee;
+  --edge:#cdbcd6; --edge-2:#b9cfc7; --ink:#18302b; --ink-dim:#5a6f68; --ink-faint:#8a9b93;
+  --algae:#5d8c00; --magenta:#d1336b; --violet:#6a47d8; --tide:#11897e; --ember:#dd6b12;
+  --mono:"IBM Plex Mono","SFMono-Regular",Menlo,monospace;
+  --display:"Fraunces",Georgia,serif;
+  /* level palette — fully hued, cycling; level 0 = most indispensable */
+  --L0:#11897e; --L1:#5d8c00; --L2:#6a47d8; --L3:#d1336b; --L4:#dd6b12; --L5:#0e7a9c; --L6:#9a8a00;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:var(--mono); color:var(--ink);
+  background:radial-gradient(120% 80% at 0% 0%, #eef4ef 0%, var(--paper) 55%), var(--paper);
+  display:flex; flex-direction:column; min-height:100vh; min-height:100dvh;
+  -webkit-font-smoothing:antialiased;
+}
+/* grain */
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:99; opacity:.05; mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+header{
+  position:relative; overflow:hidden;
+  padding:16px 22px 14px; border-bottom:1px solid var(--edge);
+  background:linear-gradient(180deg,var(--panel),var(--panel-2));
+}
+header::before{ /* vapor field */
+  content:""; position:absolute; inset:-40% -10% auto -10%; height:200%;
+  background:radial-gradient(40% 60% at 20% 30%, #11897e22, transparent 70%),
+             radial-gradient(35% 55% at 70% 60%, #6a47d822, transparent 70%),
+             radial-gradient(30% 50% at 90% 20%, #dd6b1218, transparent 70%);
+  animation:vapor 22s ease-in-out infinite alternate; pointer-events:none;
+}
+@keyframes vapor{ from{transform:translate3d(-3%,-2%,0) scale(1.05)} to{transform:translate3d(4%,3%,0) scale(1.12)} }
+header .brand{ position:relative; font-family:var(--display); font-weight:600; font-size:26px; letter-spacing:.2px; }
+header .brand em{ font-style:italic; color:var(--tide); font-weight:500 }
+header .sub{ position:relative; font-size:11.5px; color:var(--ink-dim); letter-spacing:.05em; margin-top:3px; max-width:62ch; line-height:1.5}
+header .sub b{ color:var(--ink); font-weight:500 }
+
+.wrap{ display:flex; gap:0; flex:1; min-height:0; }
+@media(max-width:920px){ .wrap{ flex-direction:column } }
+
+/* left editor column */
+.side{
+  width:392px; max-width:100%; flex:0 0 auto; display:flex; flex-direction:column;
+  border-right:1px solid var(--edge); background:linear-gradient(180deg,#fbf9fd,var(--panel));
+}
+@media(max-width:920px){ .side{ width:100%; border-right:none; border-bottom:1px solid var(--edge) } }
+.side .pad{ padding:14px 16px; display:flex; flex-direction:column; gap:12px; overflow:auto; }
+.row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+.row > label{ color:var(--ink-dim); font-size:11px; letter-spacing:.03em }
+label.field{ display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--ink-dim) }
+select,input[type=number],input[type=text]{
+  font-family:var(--mono); font-size:12.5px; color:var(--ink);
+  background:#fff; border:1px solid var(--edge); border-radius:7px; padding:6px 8px;
+}
+input[type=number]{ width:72px }
+select{ cursor:pointer }
+.seclabel{ font-family:var(--display); font-style:italic; font-size:13px; color:var(--ink); margin:2px 0 -2px; }
+textarea#grammar{
+  font-family:var(--mono); font-size:13px; line-height:1.6; color:var(--ink);
+  background:#fff; border:1px solid var(--edge); border-radius:10px; padding:12px 13px;
+  width:100%; min-height:188px; resize:vertical; tab-size:2;
+  box-shadow:inset 0 1px 0 #fff, inset 0 0 0 1px #ffffff66;
+}
+textarea#grammar:focus{ outline:none; border-color:var(--tide); box-shadow:0 0 0 3px #11897e22 }
+.err{ font-size:11.5px; min-height:17px; color:var(--ember); line-height:1.4 }
+.err.ok{ color:var(--tide) }
+.btn{
+  font-family:var(--mono); font-size:12px; color:var(--ink); background:#fbfafe;
+  border:1px solid var(--edge); border-radius:8px; padding:7px 11px; cursor:pointer; transition:.13s; line-height:1;
+}
+.btn:hover{ background:#fff; border-color:var(--tide) }
+.btn.primary{ background:var(--ink); color:var(--paper); border-color:var(--ink) }
+.btn.primary:hover{ background:#23413a }
+.btn.play.on{ background:var(--algae); border-color:var(--algae); color:#13260a }
+.slider{ width:100%; accent-color:var(--tide) }
+.help{ font-size:11px; color:var(--ink-faint); line-height:1.55 }
+.help code{ color:var(--ink-dim); background:#fff; border:1px solid var(--edge); border-radius:4px; padding:0 4px }
+.legend{ display:flex; flex-wrap:wrap; gap:4px 11px; font-size:10.5px; color:var(--ink-dim) }
+.legend i{ width:11px; height:11px; border-radius:3px; display:inline-block; vertical-align:-1px; margin-right:4px }
+.divider{ height:1px; background:var(--edge); margin:3px 0 }
+
+/* main stage */
+.main{ flex:1; min-width:0; display:flex; flex-direction:column; padding:16px 18px; gap:10px; }
+.canvas-card{
+  position:relative; background:var(--note-bg); border:1px solid var(--edge-2); border-radius:14px;
+  flex:1; min-height:340px; overflow:hidden; box-shadow:0 16px 40px -34px #2a1a3a66;
+}
+#view{ display:block; width:100%; height:100%; }
+.readout{ display:flex; gap:18px; flex-wrap:wrap; font-size:11.5px; color:var(--ink-dim); padding:0 2px }
+.readout b{ color:var(--ink); font-weight:600 }
+.readout .tag{ color:var(--tide) }
+.foot{ font-size:11px; color:var(--ink-faint); padding:0 2px 4px; line-height:1.55 }
+::-webkit-scrollbar{ width:11px;height:11px } ::-webkit-scrollbar-thumb{ background:var(--edge); border-radius:6px; border:2px solid var(--panel) } ::-webkit-scrollbar-track{ background:transparent }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Cycla <em>— subdivision grammar</em></div>
+  <div class="sub">A <b>tuning of time</b>. Start from one measure and ask how it is cut; then how each cut is cut. Rules may recurse or self-reference, so meter becomes fractal. Depth in the tree <b>is</b> indispensability. Exports <code style="font-family:var(--mono)">.cyc</code> for TaboTa.</div>
+</header>
+
+<div class="wrap">
+  <aside class="side">
+    <div class="pad">
+      <div class="row" style="justify-content:space-between">
+        <label class="field" style="flex:1">presets
+          <select id="preset">
+            <option value="common">Common time — 4 then binary</option>
+            <option value="waltz">Waltz — 3 then binary</option>
+            <option value="compound">6/8 — 2 then triple</option>
+            <option value="nineeight">9/8 — 3 then triple</option>
+            <option value="swing">Swing — binary, beat in 3, binary</option>
+            <option value="aksak">Aksak 2+2+3 (additive)</option>
+            <option value="hetero">Heterogeneous — 3, then A½ · B· · C⅓</option>
+            <option value="special">Special point 0.717 inside 4/4</option>
+            <option value="sonclave">Son clave 3-2 (explicit cuts)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="seclabel">grammar</div>
+      <textarea id="grammar" spellcheck="false"></textarea>
+      <div class="err ok" id="err">ready</div>
+
+      <div class="help">
+        <code>@name: SPEC &gt; CONT</code> — first rule (or <code>@root</code>) starts on the whole measure.<br>
+        <b>SPEC</b>: a single integer <code>N</code> = N equal cuts · or weights <code>2 2 3</code> · or measured points <code>0.717 0.283</code>.<br>
+        <b>&gt; CONT</b>: one rule name applied to every child · or one per child (<code>_</code> = stop) · omit to stop. A rule may name <b>itself</b> to recur.
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <label class="field">depth
+          <input type="range" id="depth" class="slider" min="1" max="7" value="3" style="width:150px">
+        </label>
+        <span id="depthVal" style="font-size:12px;color:var(--ink);font-weight:600;align-self:flex-end;padding-bottom:6px">3</span>
+      </div>
+      <div class="row">
+        <label class="field">beats / measure <input type="number" id="beats" value="4" min="1" max="32" step="1"></label>
+        <label class="field">bpm <input type="number" id="bpm" value="96" min="20" max="320" step="1"></label>
+        <button class="btn play" id="play" style="align-self:flex-end">▶ preview</button>
+      </div>
+
+      <div class="divider"></div>
+      <div class="seclabel">export</div>
+      <div class="row">
+        <button class="btn primary" id="dlGrammar">⤓ .cyc (grammar)</button>
+        <button class="btn" id="dlFlat">⤓ .cyc (flattened @ depth)</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="copyGrammar">⧉ copy grammar</button>
+        <button class="btn" id="copyFlat">⧉ copy flat</button>
+      </div>
+      <div class="help">The flattened file is the depth-1 onset list (the original flat <code>.cyc</code>) sampled at the current depth — it drops into TaboTa's existing importer. The grammar file keeps the recursion and depth-aware snapping.</div>
+
+      <div class="divider"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="canvas-card"><canvas id="view"></canvas></div>
+    <div class="readout" id="readout"></div>
+    <div class="foot">Top band: the subdivision <b>tree</b> — each stratum is one level deeper, cells tinted by level. Bottom band: the <b>indispensability ruler</b> — every onset is a tick whose height and weight come from the shallowest level it appears at. The downbeat is tallest; deeper cuts are progressively lighter. Snapping in the roll would round to the nearest tick at or above the chosen depth.</div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   PARSER + TREE  (unit-tested model)
+   Rule:  @name: SPEC > CONT
+     SPEC  = int N (even-N)  |  >=2 numbers (weights, ints or decimals)
+     >CONT = one rule name (all children) | per-child list (_ = leaf) | omitted (all leaves)
+   ============================================================ */
+function parseCyc2(text){
+  const lines=text.split(/\r?\n/);
+  let desc=null, sawDesc=false; const rules={}; let start=null;
+  for(const raw of lines){
+    const line=raw.trim();
+    if(line.startsWith('!')||line==='') continue;
+    if(line[0]==='@'){
+      const m=line.match(/^@\s*([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+      if(!m) throw new Error('malformed rule: '+line);
+      const name=m[1]; let rhs=m[2]; let cont=null;
+      const gt=rhs.indexOf('>');
+      if(gt>=0){ cont=rhs.slice(gt+1).trim().split(/\s+/).filter(Boolean); rhs=rhs.slice(0,gt).trim(); }
+      const nums=rhs.split(/\s+/).filter(Boolean).map(Number);
+      if(!nums.length||nums.some(n=>!isFinite(n))) throw new Error('bad cut spec in @'+name);
+      let weights;
+      if(nums.length===1){ const N=nums[0];
+        if(!Number.isInteger(N)||N<2) throw new Error('@'+name+': single value must be an integer ≥ 2');
+        weights=Array(N).fill(1/N);
+      } else { const s=nums.reduce((a,b)=>a+b,0); if(s<=0) throw new Error('@'+name+': weights sum to 0'); weights=nums.map(n=>n/s); }
+      let conts;
+      if(!cont) conts=weights.map(()=>null);
+      else if(cont.length===1){ const c=cont[0]; conts=weights.map(()=>(c==='_'||c==='.')?null:c); }
+      else if(cont.length===weights.length) conts=cont.map(c=>(c==='_'||c==='.')?null:c);
+      else throw new Error('@'+name+': '+cont.length+' continuations for '+weights.length+' children');
+      rules[name]={weights,conts}; if(start===null) start=name; continue;
+    }
+    if(!sawDesc){ desc=raw.trim(); sawDesc=true; }
+  }
+  if(!start) throw new Error('no @rules defined');
+  if(rules['root']) start='root';
+  for(const [n,r] of Object.entries(rules)) for(const c of r.conts) if(c!==null && !rules[c]) throw new Error('@'+n+' references unknown rule "'+c+'"');
+  return {description:desc, rules, start};
+}
+/* boundaries -> sorted [{phase, level}]; level 0 = measure ends, start-rule cuts = level 1, ... */
+function boundaries(g, maxDepth, cap=40000){
+  const acc=new Map(); const put=(p,l)=>{ p=+p.toFixed(9); if(!acc.has(p)||l<acc.get(p)) acc.set(p,l); };
+  put(0,0); put(1,0); let count=0;
+  (function rec(a,b,rn,depth){
+    if(rn==null||depth>maxDepth) return; const r=g.rules[rn]; if(!r) return; let x=a;
+    for(let i=0;i<r.weights.length;i++){ const w=(b-a)*r.weights[i]; const cA=x, cB=x+w;
+      if(i>0) put(cA,depth); if(++count>cap) return; rec(cA,cB,r.conts[i],depth+1); x=cB; }
+  })(0,1,g.start,1);
+  return [...acc.entries()].map(([phase,level])=>({phase,level})).sort((u,v)=>u.phase-v.phase);
+}
+/* strata: spans present at each depth, for the nested tree view */
+function strata(g, maxDepth, cap=40000){
+  const rows=[]; for(let d=0;d<=maxDepth;d++) rows.push([]);
+  rows[0].push({a:0,b:1,rule:g.start});
+  let count=0;
+  (function rec(a,b,rn,depth){
+    if(rn==null||depth>maxDepth) return; const r=g.rules[rn]; if(!r) return; let x=a;
+    for(let i=0;i<r.weights.length;i++){ const w=(b-a)*r.weights[i]; const cA=x, cB=x+w;
+      rows[depth].push({a:cA,b:cB,rule:r.conts[i],level:depth});
+      if(++count>cap) return; rec(cA,cB,r.conts[i],depth+1); x=cB; }
+  })(0,1,g.start,1);
+  return rows;
+}
+
+/* ============================================================ PRESETS ============================================================ */
+const PRESETS={
+  common:  "Common time — binary subdivision\n@root: 4 > bin\n@bin: 2 > bin",
+  waltz:   "Waltz — three, then binary\n@root: 3 > bin\n@bin: 2 > bin",
+  compound:"6/8 — two beats, each in three\n@root: 2 > tri\n@tri: 3 > bin\n@bin: 2 > bin",
+  nineeight:"9/8 — three beats, each in three\n@root: 3 > tri\n@tri: 3 > bin\n@bin: 2 > bin",
+  swing:   "Swing — beat splits in three, then binary\n@root: 4 > sw\n@sw: 3 > bin\n@bin: 2 > bin",
+  aksak:   "Aksak 2+2+3 — additive seven\n@root: 2 2 3 > bin\n@bin: 2 > bin",
+  hetero:  "Heterogeneous thirds — A halves, B stops, C in thirds\n@root: 3 > half _ thirds\n@half: 2 > _\n@thirds: 3 > _",
+  special: "Special point at 0.717 of every quarter\n@root: 4 > q\n@q: 0.717 0.283 > _ _",
+  sonclave:"Son clave 3-2 — explicit cut points, then binary\n@root: 3 3 4 2 4 > bin\n@bin: 2 > bin",
+};
+
+/* ============================================================ STATE + ELEMENTS ============================================================ */
+const $=id=>document.getElementById(id);
+const ta=$('grammar'), errEl=$('err'), depthEl=$('depth'), depthVal=$('depthVal'),
+      beatsEl=$('beats'), bpmEl=$('bpm'), cv=$('view'), ctx=cv.getContext('2d');
+let G=null, lastGood=null;
+const Lcol=i=>getComputedStyle(document.documentElement).getPropertyValue('--L'+Math.min(i,6)).trim();
+const col=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function compile(){
+  try{ G=parseCyc2(ta.value); lastGood=G;
+    errEl.textContent='✓ valid — '+Object.keys(G.rules).length+' rule'+(Object.keys(G.rules).length!==1?'s':'')+', start @'+G.start;
+    errEl.className='err ok';
+  }catch(e){ G=null; errEl.textContent='✕ '+e.message; errEl.className='err'; }
+  render(); buildLegend(); updateReadout();
+}
+
+/* ============================================================ RENDER ============================================================ */
+let DPR=Math.max(1,window.devicePixelRatio||1);
+function resize(){ const r=cv.getBoundingClientRect(); DPR=Math.max(1,window.devicePixelRatio||1);
+  cv.width=Math.round(r.width*DPR); cv.height=Math.round(r.height*DPR); ctx.setTransform(DPR,0,0,DPR,0,0); render(); }
+function render(){
+  const g=G||lastGood; const W=cv.clientWidth, H=cv.clientHeight; ctx.clearRect(0,0,W,H);
+  if(!g){ return; }
+  const dim = G? 1 : .4; ctx.globalAlpha=1;
+  const PAD=22, x0=PAD, x1=W-PAD, span=x1-x0;
+  const depth=+depthEl.value;
+  const rows=strata(g,depth);
+  // ----- top: nested tree band -----
+  const treeTop=18, treeBot=Math.round(H*0.56), rowH=(treeBot-treeTop)/(depth+1);
+  ctx.textBaseline='middle'; ctx.font='10px '+col('--mono');
+  for(let d=0;d<=depth;d++){
+    const y=treeTop+d*rowH;
+    for(const s of rows[d]){
+      const sx=x0+s.a*span, sw=(s.b-s.a)*span;
+      const c=Lcol(d);
+      ctx.globalAlpha=dim*0.13; ctx.fillStyle=c; ctx.fillRect(sx, y+2, Math.max(0,sw-1.5), rowH-4);
+      ctx.globalAlpha=dim*0.55; ctx.strokeStyle=c; ctx.lineWidth=1;
+      ctx.strokeRect(Math.round(sx)+.5, Math.round(y+2)+.5, Math.max(0,sw-1.5), rowH-4);
+      // leaf marker (rule null) = a faint dot to show "stops here"
+      if(s.rule==null && d>0 && sw>10){ ctx.globalAlpha=dim*0.5; ctx.fillStyle=c;
+        ctx.beginPath(); ctx.arc(sx+sw/2, y+rowH/2, 1.6, 0, 7); ctx.fill(); }
+    }
+    ctx.globalAlpha=dim*0.5; ctx.fillStyle=col('--ink-faint'); ctx.textAlign='right';
+    ctx.fillText('L'+d, x0-6, y+rowH/2);
+  }
+  // ----- bottom: indispensability ruler -----
+  const bnd=boundaries(g,depth).filter(b=>b.phase<1);
+  const baseY=Math.round(H*0.92), maxTick=baseY-treeBot-18;
+  ctx.globalAlpha=dim*0.5; ctx.strokeStyle=col('--edge-2'); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x0, baseY+.5); ctx.lineTo(x1, baseY+.5); ctx.stroke();
+  for(const b of bnd){
+    const x=x0+b.phase*span;
+    const t=1-(b.level/(depth+0.0001));            // shallower = taller
+    const h=18+Math.max(0,t)*maxTick;
+    const c=Lcol(b.level);
+    ctx.globalAlpha=dim*(0.35+0.55*t); ctx.strokeStyle=c; ctx.lineWidth=b.level===0?2.4:(b.level===1?1.6:1);
+    ctx.beginPath(); ctx.moveTo(Math.round(x)+.5, baseY); ctx.lineTo(Math.round(x)+.5, baseY-h); ctx.stroke();
+    ctx.globalAlpha=dim; ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x, baseY-h, b.level===0?3:2, 0, 7); ctx.fill();
+  }
+  // beat reference ticks (faint, from beats/measure) + phase labels
+  const beats=Math.max(1, +beatsEl.value||4);
+  ctx.globalAlpha=dim*0.4; ctx.fillStyle=col('--ink-faint'); ctx.font='9.5px '+col('--mono'); ctx.textAlign='center';
+  for(let k=0;k<=beats;k++){ const x=x0+(k/beats)*span; ctx.fillText((k%beats)+ (k===beats?'':''), x, baseY+11); }
+  ctx.globalAlpha=1;
+}
+function buildLegend(){
+  const g=G||lastGood; if(!g){ $('legend').innerHTML=''; return; }
+  const depth=+depthEl.value; let html='<span style="color:var(--ink-dim)">levels&nbsp;(indispensability):</span>';
+  for(let d=0;d<=depth;d++) html+=`<span><i style="background:${Lcol(d)}"></i>L${d}${d===0?' · downbeat':''}</span>`;
+  $('legend').innerHTML=html;
+}
+function updateReadout(){
+  const g=G||lastGood; if(!g){ $('readout').innerHTML=''; return; }
+  const depth=+depthEl.value; const bnd=boundaries(g,depth).filter(b=>b.phase<1);
+  const beats=+beatsEl.value||4, bpm=+bpmEl.value||96;
+  const measSec=beats*60/bpm;
+  const byL={}; for(const b of bnd) byL[b.level]=(byL[b.level]||0)+1;
+  const dist=Object.keys(byL).sort((a,b)=>a-b).map(l=>`L${l}:${byL[l]}`).join(' · ');
+  $('readout').innerHTML=
+    `<span><b>${bnd.length}</b> onsets <span class="tag">@ depth ${depth}</span></span>`+
+    `<span>per level — ${dist}</span>`+
+    `<span>measure = <b>${beats}</b> beats · <b>${measSec.toFixed(2)}</b>s @ ${bpm} bpm</span>`+
+    `<span class="tag">start @${g.start}</span>`;
+}
+
+/* ============================================================ AUDIO PREVIEW ============================================================ */
+let AC=null, playing=false, timer=null, loopStart=0, schedAhead=0.2, lookahead=25;
+function ensureAC(){ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); return AC; }
+function clickAt(when, level){
+  const ac=AC; const o=ac.createOscillator(), gNode=ac.createGain();
+  const base=[180,300,440,620,820,1050,1300][Math.min(level,6)];
+  o.type=level===0?'triangle':'sine'; o.frequency.value=base;
+  const peak=Math.max(0.06, 0.5/(level+1));
+  gNode.gain.setValueAtTime(0.0001, when);
+  gNode.gain.exponentialRampToValueAtTime(peak, when+0.002);
+  gNode.gain.exponentialRampToValueAtTime(0.0001, when+0.06+0.03*(level===0?1:0));
+  o.connect(gNode).connect(ac.destination); o.start(when); o.stop(when+0.12);
+}
+let evList=[], measDur=2, nextMeas=0;
+function rebuildEvents(){
+  const g=G||lastGood; if(!g){ evList=[]; return; }
+  const depth=+depthEl.value; const bnd=boundaries(g,depth).filter(b=>b.phase<1);
+  const beats=+beatsEl.value||4, bpm=+bpmEl.value||96; measDur=beats*60/bpm;
+  evList=bnd.map(b=>({t:b.phase*measDur, level:b.level})).sort((a,b)=>a.t-b.t);
+}
+function scheduler(){
+  const ac=AC; while(nextMeas < ac.currentTime + schedAhead){
+    for(const e of evList) clickAt(nextMeas + e.t, e.level);
+    nextMeas += measDur;
+  }
+  timer=setTimeout(scheduler, lookahead);
+}
+function togglePlay(){
+  if(playing){ playing=false; clearTimeout(timer); $('play').classList.remove('on'); $('play').textContent='▶ preview'; return; }
+  if(!(G||lastGood)) return; ensureAC(); rebuildEvents(); if(!evList.length) return;
+  playing=true; nextMeas=AC.currentTime+0.08; $('play').classList.add('on'); $('play').textContent='■ stop'; scheduler();
+}
+
+/* ============================================================ EXPORT ============================================================ */
+function download(text,name){ const b=new Blob([text],{type:'text/plain'}); const u=URL.createObjectURL(b);
+  const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1500); }
+function grammarText(){
+  let t=ta.value.trim();
+  if(!/^!/.test(t)) t='! cycla grammar\n'+t;
+  return t+'\n';
+}
+function flatText(){
+  const g=G||lastGood; if(!g) return null;
+  const depth=+depthEl.value; const bnd=boundaries(g,depth).filter(b=>b.phase>0 && b.phase<1).map(b=>b.phase);
+  const data=bnd.concat([1]);                 // close on 1/1
+  const fmt=p=> p===1 ? '1/1' : (+p.toFixed(6)).toString();
+  const desc=(g.description||'flattened from grammar')+` (depth ${depth})`;
+  return `! flattened.cyc — onset list sampled from a grammar\n!\n${desc}\n${data.length}\n!\n`+
+         data.map(p=>' '+fmt(p)).join('\n')+'\n';
+}
+async function copy(text){ try{ await navigator.clipboard.writeText(text); flashErr('copied'); }catch(e){ flashErr('copy blocked'); } }
+let efx=null; function flashErr(m){ const prev=errEl.textContent, cl=errEl.className; errEl.textContent=m; errEl.className='err ok'; clearTimeout(efx); efx=setTimeout(()=>{ compile(); },1400); }
+
+/* ============================================================ WIRING ============================================================ */
+ta.addEventListener('input', ()=>{ if(playing){ /* keep audio current */ rebuildEvents(); } compile(); });
+depthEl.addEventListener('input', ()=>{ depthVal.textContent=depthEl.value; if(playing) rebuildEvents(); render(); buildLegend(); updateReadout(); });
+[beatsEl,bpmEl].forEach(el=>el.addEventListener('input', ()=>{ if(playing) rebuildEvents(); render(); updateReadout(); }));
+$('preset').addEventListener('change', e=>{ ta.value=PRESETS[e.target.value]||''; compile(); if(playing) rebuildEvents(); });
+$('play').addEventListener('click', togglePlay);
+$('dlGrammar').addEventListener('click', ()=>download(grammarText(),'meter.cyc'));
+$('dlFlat').addEventListener('click', ()=>{ const t=flatText(); if(t) download(t,'meter_flat.cyc'); });
+$('copyGrammar').addEventListener('click', ()=>copy(grammarText()));
+$('copyFlat').addEventListener('click', ()=>{ const t=flatText(); if(t) copy(t); });
+window.addEventListener('resize', resize);
+
+/* boot */
+ta.value=PRESETS.common;
+window.addEventListener('load', ()=>{ resize(); compile(); });
+resize(); compile();
+</script>
+</body>
+</html>

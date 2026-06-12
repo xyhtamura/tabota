@@ -1,0 +1,5 @@
+! grammar_swing.cyc
+Swing -- each beat splits in three, then binary.
+@root: 4 > sw
+@sw: 3 > bin
+@bin: 2 > bin

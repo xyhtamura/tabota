@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tabota</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,400;1,9..144,600&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --abyss:#eaf1ec; --abyss-2:#e3ebe6; --membrane:#f1ecf4; --membrane-2:#e7dfee;
+  --silt:#cdbcd6; --silt-2:#ddd2e6; --bone:#18302b; --bone-dim:#5a6f68; --bone-faint:#8a9b93;
+  --algae:#5d8c00; --algae-deep:#496e00; --membrane-pink:#d1336b;
+  --tide:#11897e; --tide-deep:#0c6c63; --ember:#dd6b12; --bruise:#6a47d8;
+  --mono:"IBM Plex Mono","SFMono-Regular",Menlo,monospace; --display:"Fraunces",Georgia,serif;
+}
+*{box-sizing:border-box;}
+html{scrollbar-color:var(--silt) var(--abyss);}
+body{font-family:var(--mono);
+  background:radial-gradient(1200px 620px at 82% -6%,#f1ecf488 0%,transparent 55%),radial-gradient(1000px 560px at -8% 108%,#e6efe988 0%,transparent 55%),radial-gradient(120% 80% at 0% 0%,#eef4ef 0%,var(--abyss) 60%),var(--abyss);
+  background-attachment:fixed; color:var(--bone); margin:0; padding:28px 22px 64px; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;}
+.wrap{width:97%; max-width:1480px; margin:0 auto; display:flex; flex-direction:column; gap:20px;}
+
+.masthead{display:flex; align-items:flex-end; justify-content:space-between; gap:20px; border-bottom:1px solid var(--silt); padding-bottom:14px; flex-wrap:wrap;}
+.logo{display:flex; align-items:baseline; gap:14px;}
+.logo h1{font-family:var(--display); font-style:italic; font-weight:400; font-size:46px; letter-spacing:-1px; margin:0; line-height:.9; color:var(--bone);}
+.logo .kanji{color:var(--algae); font-style:normal;}
+.logo .tag{font-size:11px; color:var(--bone-dim); letter-spacing:.18em; text-transform:uppercase;}
+.meta-strip{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.chip{font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; border:1px solid var(--silt); border-radius:2px; padding:4px 8px; color:var(--bone-dim); background:var(--abyss-2);}
+.chip b{color:var(--tide); font-weight:500;}
+.rolllink{display:inline-flex; align-items:center; gap:10px; text-decoration:none; border:1px solid var(--tide); border-radius:3px; padding:6px 12px 6px 11px; background:linear-gradient(180deg,#ffffffaa,#e9f3f1); color:var(--bone); transition:.14s;}
+.rolllink:hover{background:var(--tide); border-color:var(--tide);}
+.rolllink:hover .rl-ico,.rolllink:hover .rl-arr,.rolllink:hover .rl-tx b,.rolllink:hover .rl-tx em{color:#fff;}
+.rolllink .rl-ico{font-size:16px; color:var(--tide); line-height:1;}
+.rolllink .rl-tx{display:flex; flex-direction:column; line-height:1.15;}
+.rolllink .rl-tx b{font-size:12.5px; color:var(--bone);}
+.rolllink .rl-tx em{font-style:normal; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--bone-dim);}
+.rolllink .rl-arr{font-size:14px; color:var(--tide); margin-left:2px;}
+
+.lede{font-size:13px; line-height:1.6; color:var(--bone-dim); margin:-4px 0 0; padding:0 2px;}
+.lede b{color:var(--bone); font-weight:600;}
+.lede a{color:var(--tide); text-decoration:none; border-bottom:1px solid var(--tide);}
+.lede a:hover{color:var(--tide-deep); border-color:var(--tide-deep);}
+.lede .fct{color:var(--bruise); font-weight:500;}
+
+.panel{border:1px solid var(--silt); border-radius:3px; background:var(--membrane); position:relative;}
+.panel::before{content:""; position:absolute; top:7px; left:7px; width:9px; height:9px; border-top:1px solid var(--silt); border-left:1px solid var(--silt); pointer-events:none;}
+.panel::after{content:""; position:absolute; bottom:7px; right:7px; width:9px; height:9px; border-bottom:1px solid var(--silt); border-right:1px solid var(--silt); pointer-events:none;}
+.panel-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; border-bottom:1px solid var(--silt-2); flex-wrap:wrap;}
+.panel-head h2{font-family:var(--display); font-weight:400; font-size:18px; margin:0; letter-spacing:.2px;}
+.panel-head .idx{font-size:10.5px; color:var(--bone-faint); letter-spacing:.2em; text-transform:uppercase;}
+.panel-body{padding:18px;}
+
+button,.btn{font-family:var(--mono); font-size:12.5px; cursor:pointer; background:var(--membrane-2); border:1px solid var(--silt); color:var(--bone); padding:7px 13px; border-radius:2px; letter-spacing:.02em; transition:.12s;}
+button:hover,.btn:hover{border-color:var(--tide); color:var(--tide);}
+button.primary{background:var(--tide); color:#fff; border-color:var(--tide); font-weight:600; letter-spacing:.05em;}
+button.primary:hover{background:var(--tide-deep); color:#fff; border-color:var(--tide-deep);}
+.icon-btn{display:inline-flex; align-items:center; gap:6px;}
+select,input[type=text]{font-family:var(--mono); font-size:13px; background:var(--abyss-2); border:1px solid var(--silt); color:var(--bone); padding:7px 9px; border-radius:2px;}
+select:focus{outline:none; border-color:var(--tide);}
+
+.zoom{display:flex; gap:6px; align-items:center;}
+.zoom span{font-size:10px; color:var(--bone-faint); letter-spacing:.12em; text-transform:uppercase;}
+.zoom-btn{width:26px; padding:4px 0; text-align:center;}
+#plot-wrap{overflow:auto; position:relative; padding:4px 0;}
+#plot-wrap svg{display:block;}
+.svg-frame-band{opacity:.5;}
+.svg-grid{stroke:rgba(24,48,43,0.08); stroke-width:1;}
+.svg-axislabel{fill:var(--bone-faint); font:10px var(--mono);}
+.svg-framelabel{fill:var(--bone-dim); font:10.5px var(--mono);}
+.svg-divider{stroke:rgba(24,48,43,0.20); stroke-width:1; stroke-dasharray:3 3;}
+.legend{display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; font-size:11px; color:var(--bone-dim);}
+.legend .k{display:inline-flex; align-items:center; gap:6px;}
+.legend .sw{width:14px; height:10px; border-radius:2px; display:inline-block;}
+
+.editor-actions{display:flex; gap:9px; flex-wrap:wrap; align-items:center;}
+.CodeMirror{border:1px solid var(--silt); border-radius:2px; height:340px; font-size:13px; font-family:var(--mono); background:var(--abyss-2)!important; color:var(--bone)!important;}
+.CodeMirror-gutters{background:var(--abyss)!important; border-right:1px solid var(--silt)!important;}
+.CodeMirror-linenumber{color:var(--bone-faint)!important;}
+.CodeMirror-cursor{border-left:1px solid var(--algae)!important;}
+.CodeMirror-selected{background:#11897e2e!important;}
+.cm-s-default .cm-string{color:var(--membrane-pink)!important;}
+.cm-s-default .cm-property{color:var(--tide)!important;}
+.cm-s-default .cm-number{color:var(--algae)!important;}
+.cm-s-default .cm-atom,.cm-s-default .cm-keyword{color:var(--bruise)!important;}
+#render-btn{margin-top:11px;}
+
+.note{font-size:11.5px; color:var(--bone-dim); line-height:1.55;}
+.note code{color:var(--algae);}
+.facets{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;}
+.facet{border:1px solid var(--silt); border-radius:2px; padding:9px 11px; background:var(--abyss-2);}
+.facet b{color:var(--bruise); font-size:11.5px;}
+.facet span{display:block; color:var(--bone-dim); font-size:11px; line-height:1.5; margin-top:3px;}
+
+.report-wrap{overflow:auto; max-height:380px; border:1px solid var(--silt); border-radius:2px;}
+table.report{width:100%; border-collapse:collapse; font-size:12px;}
+table.report th,table.report td{padding:6px 11px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--silt-2);}
+table.report th{position:sticky; top:0; background:var(--membrane-2); color:var(--bone-dim); font-weight:500; letter-spacing:.05em; text-transform:uppercase; font-size:10px; z-index:1;}
+table.report tr:hover td{background:rgba(24,48,43,0.04);}
+.tag{display:inline-block; font-size:9.5px; letter-spacing:.04em; padding:1px 6px; border-radius:9px; margin:1px 2px 1px 0; border:1px solid;}
+.tag.determinate{color:var(--tide); border-color:var(--tide);}
+.tag.relational{color:var(--bruise); border-color:var(--bruise);}
+.tag.indeterminate{color:var(--ember); border-color:var(--ember);}
+.tag.ordinal{color:var(--algae-deep); border-color:var(--algae);}
+.tag.point{color:var(--bone-dim); border-color:var(--silt);}
+.tag.open{color:var(--ember); border-color:var(--ember);}
+.tag.unpegged,.tag.unplaced,.tag.dangling{color:var(--membrane-pink); border-color:var(--membrane-pink);}
+.tag.in-cycle{color:#fff; background:var(--bruise); border-color:var(--bruise);}
+.tag.tempo-ramp{color:var(--tide); border-color:var(--tide);}
+
+.described{margin-top:14px; border:1px solid var(--bruise); border-radius:2px; background:#6a47d80d; padding:11px 13px;}
+.described h4{margin:0 0 8px; color:var(--bruise); font-family:var(--display); font-weight:400; font-size:14px;}
+.described .chip-row{display:flex; gap:8px; flex-wrap:wrap;}
+.dchip{border:1px solid var(--silt); border-radius:3px; padding:6px 10px; background:var(--abyss-2); font-size:11.5px; color:var(--bone);}
+.dchip b{color:var(--bone);} .dchip em{font-style:normal; color:var(--bone-dim); display:block; font-size:10.5px; margin-top:2px;}
+.diags{margin-top:14px;}
+.diag{font-size:11.5px; padding:4px 0 4px 11px; margin:5px 0; border-left:2px solid var(--silt); color:var(--bone-dim);}
+.diag.error{border-left-color:var(--membrane-pink); color:var(--membrane-pink);}
+.diag.info{border-left-color:var(--bruise);}
+.summary{display:flex; gap:18px; flex-wrap:wrap; margin:0 0 12px; font-size:12px;}
+.summary .stat b{color:var(--tide); font-weight:600;}
+
+.ref a{color:var(--tide); text-decoration:none;} .ref a:hover{text-decoration:underline;}
+.ref h1,.ref h2{font-family:var(--display); font-weight:400; border-bottom:1px solid var(--silt); padding-bottom:9px; margin-top:30px;}
+.ref h3{color:var(--algae); margin-top:26px; font-family:var(--display); font-weight:400;}
+.ref h4{color:var(--tide); margin:18px 0 5px;}
+.ref p,.ref li{color:var(--bone-dim); line-height:1.65;}
+.ref table{width:100%; border-collapse:collapse; margin:14px 0;}
+.ref th,.ref td{border:1px solid var(--silt); padding:8px 11px; text-align:left;}
+.ref th{background:var(--membrane-2); color:var(--bone);}
+.ref ul{padding-left:22px;} .ref li{margin-bottom:7px;}
+.ref code{background:var(--abyss-2); color:var(--membrane-pink); padding:2px 5px; border-radius:2px; font-size:.9em;}
+.ref pre{background:var(--abyss-2); border:1px solid var(--silt); border-radius:2px; padding:14px; overflow:auto;}
+.ref pre code{color:var(--bone); display:block; white-space:pre;}
+.sample pre{background:var(--abyss-2); border:1px solid var(--silt); border-radius:2px; padding:13px; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:200px; overflow:auto;}
+.sample .panel-head{border-bottom:none; padding:0 0 8px;}
+.json-key{color:var(--tide);} .json-string{color:var(--membrane-pink);} .json-number{color:var(--algae);} .json-boolean{color:var(--bruise);}
+::selection{background:#bfe7e1; color:var(--bone);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="masthead">
+  <div class="logo">
+    <h1>Tabota<span class="kanji">田</span></h1>
+    <span class="tag">event description language · read-only visualizer</span>
+  </div>
+  <div class="meta-strip">
+    <a class="rolllink" href="tabota_roll.html" title="Open the visual piano-roll editor"><span class="rl-ico">▦</span><span class="rl-tx"><b>Piano Roll</b><em>draw · edit · MIDI</em></span><span class="rl-arr">→</span></a>
+    <a class="rolllink" href="cycla_builder.html" title="Open the Cycla subdivision grammar builder"><span class="rl-ico">⌬</span><span class="rl-tx"><b>Cycla</b><em>build meters</em></span><span class="rl-arr">→</span></a>
+    <span class="chip">lang <b>v2.0</b></span>
+    <span class="chip">interpreter <b>shared</b></span>
+  </div>
+</div>
+
+<p class="lede">
+  A read-only window onto the Tabota language. In v2 every node of a score is one recursive <b>Event</b>, a stackable bag of facets — a <span class="fct">frame</span> (coordinate field), a <span class="fct">value</span>, a <span class="fct">position</span>, an <span class="fct">extent</span>, nested <span class="fct">events</span>. This page and the <a href="tabota_roll.html">piano-roll editor</a> read the score through the <b>same interpreter</b> (<code>tabota-resolve.js</code>); they only differ in what each chooses to draw.
+</p>
+<p class="lede">
+  Because it never has to <i>play</i> anything, this page draws a <b>wider</b> domain than the Roll: zero-extent <span class="fct">points</span>, purely sequential <span class="fct">achronous</span> events, indeterminate pitch <span class="fct">bands</span> — all things MIDI can't represent. The genuinely <i>unplaceable</i> (relational cycles, indeterminate onsets) can't sit on a timeline, so they're <b>described, not placed</b> below the plot rather than refused. MIDI export lives in the Roll; here you export the visual score.
+</p>
+
+<div class="panel"><div class="panel-body"><div class="facets" id="facet-key"></div></div></div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Graphical Output</h2>
+    <div style="display:flex;gap:16px;align-items:center;">
+      <button class="btn" id="export-svg">↓ Export visual score (SVG)</button>
+      <div class="zoom"><span>X</span><button class="zoom-btn" id="zx-">–</button><button class="zoom-btn" id="zx+">+</button></div>
+      <div class="zoom"><span>Y</span><button class="zoom-btn" id="zy-">–</button><button class="zoom-btn" id="zy+">+</button></div>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div id="plot-wrap"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Score Source</h2>
+    <div class="editor-actions">
+      <select id="sample-select" title="Load a sample">
+        <option value="">load sample…</option>
+        <option value="main">Language showcase</option>
+        <option value="micro">Points (no extent)</option>
+        <option value="symbolic">Symbolic melody + glide</option>
+        <option value="theatre">Achronous cues</option>
+        <option value="relational">Relations &amp; the unplaceable</option>
+      </select>
+      <button id="beautify-btn">Beautify</button>
+      <button class="copy-btn icon-btn" id="copy-main"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <textarea id="json-input"></textarea>
+    <button id="render-btn" class="primary">Render Score</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>Inspect</h2><span class="idx">resolved by tabota-resolve.js</span></div>
+  <div class="panel-body">
+    <div id="summary" class="summary"></div>
+    <div id="described"></div>
+    <div class="report-wrap"><table class="report"><thead><tr>
+      <th>id</th><th>kind</th><th>start</th><th>end</th><th>value</th><th>coords</th><th>tags</th>
+    </tr></thead><tbody id="node-rows"></tbody></table></div>
+    <div id="diags" class="diags"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>Samples</h2><span class="idx">copy &amp; render</span></div>
+  <div class="panel-body">
+    <div class="sample"><div class="panel-head"><h4 style="margin:0;color:var(--tide);">Symbolic melody + glide</h4><button class="copy-btn" data-target="symbolic">Copy &amp; Render</button></div><pre><code id="s-symbolic"></code></pre></div>
+    <div class="sample" style="margin-top:14px;"><div class="panel-head"><h4 style="margin:0;color:var(--tide);">Relations &amp; the unplaceable</h4><button class="copy-btn" data-target="relational">Copy &amp; Render</button></div><pre><code id="s-relational"></code></pre></div>
+  </div>
+</div>
+
+<div class="panel ref">
+  <div class="panel-head"><h2>Language Reference</h2><span class="idx">tabota_reference_guide.md</span></div>
+  <div class="panel-body"><div id="markdown-content"><p class="note">Loading reference guide…</p></div></div>
+</div>
+
+</div>
+
+<script type="module">
+import { resolve } from './tabota-resolve.js';
+
+/* ---- label helpers (formatting only; not interpretation) ---- */
+const NOTE=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const freqToMidi=(f)=>69+12*Math.log2(f/440);
+const midiToName=(m)=>NOTE[((Math.round(m)%12)+12)%12]+(Math.floor(Math.round(m)/12)-1);
+
+const FACETS=[
+  ['frame','the regime role — a coordinate field its children are read in'],
+  ['value','what the Event is: pitch, lane, text, tempo'],
+  ['position','where it sits — exact, relational, or a window'],
+  ['extent','its own duration / end'],
+  ['lenses','named secondary charts — alternate tempo/meter or tuning'],
+  ['events','nested Events — scope, not "during"']
+];
+
+const samples={
+ main:`{
+  "projectName": "Tabota Language Showcase",
+  "languageVersion": "2.0",
+  "metadata": { "profile": "determinate" },
+  "score": [
+    { "id": "A1_Melody", "role": "regime",
+      "frame": { "temporal": "metered", "temporalSettings": { "beats": 4, "bpm": 120, "timeSignature": "4/4" }, "axis": "frequency" },
+      "events": [
+        { "value": { "pitch": { "from": 440.0, "to": 523.25 } }, "position": { "at": 0 }, "extent": { "duration": 2 }, "payload": { "comment": "A4 -> C5 glide" } },
+        { "value": { "pitch": { "hz": 587.33 } }, "position": { "at": 2.5 } },
+        { "value": { "pitch": { "from": 659.25, "to": 675.5 } }, "position": { "at": 3 }, "extent": { "duration": 1 } }
+      ] },
+    { "id": "B1_Rhythm", "role": "regime",
+      "frame": { "temporal": "chronological", "temporalSettings": { "duration": 2, "units": "seconds" }, "axis": "categorical", "axisSettings": { "categories": ["Kick", "Snare", "Hi-Hat"] } },
+      "events": [
+        { "value": { "lane": "Kick" }, "position": { "at": 0 } },
+        { "value": { "lane": "Snare" }, "position": { "at": 0.5 } },
+        { "value": { "lane": "Kick" }, "position": { "at": 1 } },
+        { "value": { "lane": "Snare" }, "position": { "at": 1.5 } }
+      ] }
+  ]
+}`,
+ micro:`{
+  "projectName": "Points (no extent)",
+  "languageVersion": "2.0",
+  "score": [
+    { "id": "Scale", "role": "regime",
+      "frame": { "temporal": "metered", "temporalSettings": { "beats": 8, "bpm": 90 }, "axis": "frequency" },
+      "events": [
+        { "value": { "pitch": { "hz": 261.63 } }, "position": { "at": 0 } },
+        { "value": { "pitch": { "hz": 311.13 } }, "position": { "at": 2 } },
+        { "value": { "pitch": { "hz": 369.99 } }, "position": { "at": 4 } },
+        { "value": { "pitch": { "hz": 440.0 } }, "position": { "at": 6 } }
+      ] }
+  ]
+}`,
+ symbolic:`{
+  "projectName": "Symbolic Melody",
+  "languageVersion": "2.0",
+  "score": [
+    { "id": "Theme", "role": "regime",
+      "frame": { "temporal": "metered", "temporalSettings": { "beats": 8, "bpm": 100 }, "axis": "symbolic", "axisSettings": { "tuning": "12-TET", "a4": 440 } },
+      "events": [
+        { "value": { "pitch": { "note": "C4" } }, "position": { "at": 0 }, "extent": { "duration": 1 } },
+        { "value": { "pitch": { "note": "E4" } }, "position": { "at": 1 }, "extent": { "duration": 1 } },
+        { "value": { "pitch": { "note": "G4" } }, "position": { "at": 2 }, "extent": { "duration": 1 } },
+        { "value": { "pitch": { "note": "A4" } }, "position": { "at": 3 }, "extent": { "duration": 2 } },
+        { "value": { "pitch": { "from": "A4", "to": "D5" } }, "position": { "at": 5 }, "extent": { "duration": 3 }, "payload": { "comment": "gliss" } }
+      ] }
+  ]
+}`,
+ theatre:`{
+  "projectName": "Stage Cues",
+  "languageVersion": "2.0",
+  "score": [
+    { "id": "Scene 1", "role": "regime",
+      "frame": { "temporal": "achronous", "axis": "instructional" },
+      "events": [
+        { "value": { "text": "House lights down." }, "position": { "index": 0 } },
+        { "value": { "text": "Spotlight center." }, "position": { "index": 1 } },
+        { "value": { "text": "Actor crosses." }, "position": { "index": 2 } },
+        { "value": { "text": "'Am I late?'" }, "position": { "index": 3 } }
+      ] }
+  ]
+}`,
+ relational:`{
+  "projectName": "Relations and the Unplaceable",
+  "languageVersion": "2.0",
+  "metadata": { "profile": "full" },
+  "score": [
+    { "id": "Spine", "role": "regime",
+      "frame": { "temporal": "metered", "temporalSettings": { "beats": 8, "bpm": 100 }, "axis": "symbolic", "axisSettings": { "tuning": "12-TET" } },
+      "events": [
+        { "id": "A", "value": { "pitch": { "note": "C4" } }, "position": { "at": 0 }, "extent": { "duration": 2 } },
+        { "id": "B", "value": { "pitch": { "note": "G4" } }, "position": { "relations": [ { "type": "m", "of": { "event": "A", "point": "end" } } ] }, "extent": { "duration": 2 }, "payload": { "comment": "meets A — resolves" } },
+        { "id": "C", "value": { "pitch": { "between": { "low": "E4", "high": "B4" } } }, "position": { "between": { "from": { "event": "A" }, "to": { "event": "B" } } } },
+        { "id": "P1", "value": { "pitch": { "note": "D4" } }, "position": { "relations": [ { "type": "bi", "of": { "event": "P2" } } ] } },
+        { "id": "P2", "value": { "pitch": { "note": "F4" } }, "position": { "relations": [ { "type": "bi", "of": { "event": "P1" } } ] }, "payload": { "comment": "P1 after P2, P2 after P1" } }
+      ] }
+  ]
+}`
+};
+
+let editor, zoom={x:1,y:1};
+const BASE_PXPS=80, BASE_H=300, ML=72, MB=34, MT=26;
+
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('facet-key').innerHTML=FACETS.map(([n,d])=>`<div class="facet"><b>${n}</b><span>${d}</span></div>`).join('');
+  editor=CodeMirror.fromTextArea(document.getElementById('json-input'),{mode:{name:'javascript',json:true},lineNumbers:true,matchBrackets:true});
+  editor.setValue(JSON.stringify(JSON.parse(samples.main),null,2));
+  document.getElementById('s-symbolic').innerHTML=hl(samples.symbolic);
+  document.getElementById('s-relational').innerHTML=hl(samples.relational);
+  document.querySelectorAll('.copy-btn').forEach(b=>b.addEventListener('click',copyClick));
+  document.getElementById('render-btn').addEventListener('click',render);
+  document.getElementById('beautify-btn').addEventListener('click',()=>{try{editor.setValue(JSON.stringify(JSON.parse(editor.getValue()),null,2));}catch(e){}});
+  document.getElementById('sample-select').addEventListener('change',e=>{ if(e.target.value){ editor.setValue(JSON.stringify(JSON.parse(samples[e.target.value]),null,2)); render(); e.target.value=''; } });
+  document.getElementById('zx+').onclick=()=>{zoom.x*=1.25;render();}; document.getElementById('zx-').onclick=()=>{zoom.x=Math.max(.25,zoom.x/1.25);render();};
+  document.getElementById('zy+').onclick=()=>{zoom.y*=1.25;render();}; document.getElementById('zy-').onclick=()=>{zoom.y=Math.max(.25,zoom.y/1.25);render();};
+  document.getElementById('export-svg').addEventListener('click',exportSvg);
+  render(); loadGuide();
+});
+
+/* ============================ RENDER ============================ */
+function render(){
+  let doc; const pw=document.getElementById('plot-wrap');
+  try{ doc=JSON.parse(editor.getValue()); }
+  catch(e){ pw.innerHTML=`<p style="color:var(--membrane-pink)">JSON parse error: ${e.message}</p>`; return; }
+  const R=resolve(doc);
+  pw.innerHTML=buildSvg(R);
+  buildLegend(R);
+  buildInspect(R);
+}
+
+function ranges(R){
+  let fmin=Infinity,fmax=-Infinity,mmin=Infinity,mmax=-Infinity;
+  R.nodes.forEach(n=>{ if(!n.pitch) return;
+    const hs=[n.pitch.hz,n.pitch.from,n.pitch.to,...(n.pitch.band||[])].filter(x=>x!=null&&isFinite(x));
+    hs.forEach(h=>{ if(n.frame.axis==='symbolic'){ const m=freqToMidi(h); mmin=Math.min(mmin,m); mmax=Math.max(mmax,m);} else { fmin=Math.min(fmin,h); fmax=Math.max(fmax,h);} });
+  });
+  if(fmin===Infinity){fmin=110;fmax=880;} else { fmin*=0.85; fmax*=1.18; }
+  if(mmin===Infinity){mmin=48;mmax=84;} else { mmin=Math.floor(mmin)-3; mmax=Math.ceil(mmax)+3; }
+  return {fmin,fmax,mmin,mmax};
+}
+function yFrac(node, hz, rg){
+  const ax=node.frame.axis;
+  if(ax==='frequency'){ if(hz<=0) return 1; return 1-(Math.log(hz)-Math.log(rg.fmin))/(Math.log(rg.fmax)-Math.log(rg.fmin)); }
+  if(ax==='symbolic'){ const span=rg.mmax-rg.mmin||1; return 1-(freqToMidi(hz)-rg.mmin)/span; }
+  if(ax==='categorical'){ const c=node.frame.categories||[]; const i=Math.max(0,c.indexOf(node.lane)); return (i+0.5)/(c.length||1); }
+  return null;
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function buildSvg(R){
+  const rg=ranges(R);
+  const total=Math.max(R.totalSec,0.001);
+  const plotW=Math.max(560, total*BASE_PXPS*zoom.x);
+  const plotH=BASE_H*zoom.y;
+  const W=ML+plotW+14, H=MT+plotH+MB;
+  const X=sec=>ML+(sec/total)*plotW;
+  const Y=f=>MT+f*plotH;
+  const bandColors=['#11897e1c','#d1336b18','#5d8c0018','#6a47d818'];
+  let s=`<svg id="score-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Mono, monospace">`;
+  s+=`<rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
+  const hasOrdinal=R.frames.some(f=>f.ordinal)||R.nodes.some(n=>n.tags.includes('ordinal'));
+
+  R.frames.forEach((fr,i)=>{
+    const x0=X(fr.startSec), x1=X(fr.endSec);
+    s+=`<rect class="svg-frame-band" x="${x0}" y="${MT}" width="${Math.max(0,x1-x0)}" height="${plotH}" fill="${bandColors[i%4]}"/>`;
+    s+=`<line class="svg-divider" x1="${x0}" y1="${MT}" x2="${x0}" y2="${MT+plotH}"/>`;
+    s+=`<text class="svg-framelabel" x="${x0+4}" y="${MT-8}">${esc(fr.id)}${fr.ordinal?' · order':''}</text>`;
+  });
+  const ticks=Math.min(40,Math.max(4,Math.round(total)));
+  for(let i=0;i<=ticks;i++){ const t=total*i/ticks, x=X(t);
+    s+=`<line class="svg-grid" x1="${x}" y1="${MT}" x2="${x}" y2="${MT+plotH}"/>`;
+    s+=`<text class="svg-axislabel" x="${x}" y="${MT+plotH+16}" text-anchor="middle">${total<=20?t.toFixed(1):Math.round(t)}${hasOrdinal?'':'s'}</text>`;
+  }
+  if(hasOrdinal) s+=`<text class="svg-axislabel" x="${ML}" y="${H-4}">ordinal regions: spaced for order, not duration</text>`;
+
+  const ax=R.primaryAxis;
+  if(ax==='frequency'){ for(let i=0;i<8;i++){ const p=i/7, hz=Math.exp(Math.log(rg.fmin)+p*(Math.log(rg.fmax)-Math.log(rg.fmin))), y=Y(1-p); s+=`<text class="svg-axislabel" x="${ML-6}" y="${y+3}" text-anchor="end">${hz<1000?Math.round(hz):(hz/1000).toFixed(1)+'k'}Hz</text>`; } }
+  else if(ax==='symbolic'){ const span=rg.mmax-rg.mmin||1, step=Math.max(1,Math.round(span/8)); for(let m=Math.ceil(rg.mmin/step)*step;m<=rg.mmax;m+=step){ const y=Y(1-(m-rg.mmin)/span); s+=`<text class="svg-axislabel" x="${ML-6}" y="${y+3}" text-anchor="end">${midiToName(m)}</text>`; } }
+
+  let instr=0;
+  R.nodes.forEach(n=>{
+    if(n.start.sec==null) return;
+    if(n.kind==='frame') return;
+    const x0=X(n.start.sec), x1=n.end&&n.end.sec!=null?X(n.end.sec):x0;
+    const isOrd=n.tags.includes('ordinal');
+    if(n.kind==='tempo'){ const tv=(n.payload&&n.payload.tempo)||{}; const lbl=tv.bpm!=null?('♩='+tv.bpm):('♩='+(tv.from||'')+'→'+(tv.to||'')); s+=`<text class="svg-axislabel" x="${x0+2}" y="${MT-8}" fill="var(--tide)">${esc(lbl)}</text>`; return; }
+    if(n.kind==='lane'){ const y=Y(yFrac(n,0,rg)); s+=dot(x0,y,'var(--algae)'); s+=`<text class="svg-axislabel" x="${x0+9}" y="${y+3}">${esc(n.lane)}</text>`; return; }
+    if(n.kind==='text' || n.frame.axis==='instructional'){ const y=MT+18+(instr%6)*(plotH/7); instr++; s+=dot(x0,y,'var(--bruise)'); s+=`<text class="svg-axislabel" x="${x0+9}" y="${y+3}" fill="var(--bone-dim)">${esc(n.text||'')}</text>`; return; }
+    if(!n.pitch) return;
+    if(n.pitch.mode==='band'){ const yA=Y(yFrac(n,n.pitch.band[1],rg)), yB=Y(yFrac(n,n.pitch.band[0],rg)); const w=Math.max(8,x1-x0); s+=`<rect x="${x0}" y="${Math.min(yA,yB)}" width="${w}" height="${Math.abs(yB-yA)}" fill="#6a47d829" stroke="#6a47d8" stroke-dasharray="3 3"/>`; return; }
+    if(n.pitch.mode==='glide'){ const ya=Y(yFrac(n,n.pitch.from,rg)), yb=Y(yFrac(n,n.pitch.to,rg)); s+=`<line x1="${x0}" y1="${ya}" x2="${x1}" y2="${yb}" stroke="var(--membrane-pink)" stroke-width="2.5" stroke-linecap="round"/>`; return; }
+    if(n.pitch.hz!=null){ const y=Y(yFrac(n,n.pitch.hz,rg));
+      if(n.kind==='point'){ s+=dot(x0,y,isOrd?'var(--algae-deep)':'var(--algae)'); }
+      else { s+=`<rect x="${x0}" y="${y-3.5}" width="${Math.max(2,x1-x0)}" height="7" rx="2" fill="var(--algae)" opacity="0.85"/>`; }
+    }
+  });
+  s+=`</svg>`;
+  return s;
+}
+function dot(x,y,c){ return `<circle cx="${x}" cy="${y}" r="5.5" fill="${c}" stroke="#fff" stroke-width="1.5"/>`; }
+
+function buildLegend(R){
+  const items=[['Hold','var(--algae)'],['Glide','var(--membrane-pink)'],['Point','var(--algae)'],['Band','#6a47d8'],['Cue/Lane','var(--bruise)']];
+  document.getElementById('legend').innerHTML=items.map(([t,c])=>`<span class="k"><span class="sw" style="background:${c}"></span>${t}</span>`).join('');
+}
+
+function buildInspect(R){
+  const det=R.nodes.filter(n=>n.tags.includes('determinate')).length;
+  const unp=R.nodes.filter(n=>n.start.sec==null).length;
+  document.getElementById('summary').innerHTML=
+    `<span class="stat">nodes <b>${R.nodes.length}</b></span>`+
+    `<span class="stat">frames <b>${R.frames.length}</b></span>`+
+    `<span class="stat">determinate <b>${det}</b></span>`+
+    `<span class="stat">described, not placed <b>${unp}</b></span>`+
+    `<span class="stat">length <b>${R.totalSec.toFixed(2)}s</b></span>`;
+
+  const dd=document.getElementById('described');
+  const unplaced=R.nodes.filter(n=>n.start.sec==null);
+  if(unplaced.length){
+    dd.innerHTML=`<div class="described"><h4>Described, not placed — valid Tabota a timeline can't draw</h4><div class="chip-row">`+
+      unplaced.map(n=>{ const why=n.tags.includes('in-cycle')?'relational cycle — no linearization':n.tags.includes('indeterminate')?'indeterminate onset / pitch':n.tags.includes('dangling')?'dangling reference':'unresolved'; return `<div class="dchip"><b>${esc(n.id||n.kind)}</b><em>${why}</em></div>`; }).join('')+
+      `</div></div>`;
+  } else dd.innerHTML='';
+
+  document.getElementById('node-rows').innerHTML=R.nodes.map(n=>{
+    const coords=n.start.coords.map(c=>`${c.frame||'·'}${c.lens?'/'+c.lens:''}:${(+c.value).toFixed(2)}${c.in[0]}`).join(', ')||'—';
+    const val=(n.pitch?(n.pitch.label||n.pitch.mode):(n.lane||n.text||(n.kind==='tempo'?'tempo':'')))||'—';
+    return `<tr><td>${esc(n.id||'')}</td><td>${n.kind}</td><td>${n.start.sec==null?'—':n.start.sec.toFixed(2)+'s'}</td><td>${n.end&&n.end.sec!=null?n.end.sec.toFixed(2)+'s':'—'}</td><td>${esc(val)}</td><td style="color:var(--bone-faint)">${esc(coords)}</td><td>${n.tags.map(t=>`<span class="tag ${t}">${t}</span>`).join('')}</td></tr>`;
+  }).join('');
+
+  document.getElementById('diags').innerHTML = R.diagnostics.length
+    ? '<div class="note" style="margin-bottom:6px;">Diagnostics</div>'+R.diagnostics.map(d=>`<div class="diag ${d.level}"><b>${esc(d.who)}</b> — ${esc(d.message)}</div>`).join('')
+    : '';
+}
+
+function exportSvg(){
+  const svg=document.getElementById('score-svg'); if(!svg) return;
+  const blob=new Blob([svg.outerHTML],{type:'image/svg+xml'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; let nm='tabota-score';
+  try{ nm=(JSON.parse(editor.getValue()).projectName||'tabota-score').replace(/\s+/g,'_'); }catch(e){}
+  a.download=nm+'.svg'; a.click(); URL.revokeObjectURL(url);
+}
+function copyClick(e){
+  const id=e.currentTarget.dataset.target; const txt=id?samples[id]:editor.getValue();
+  navigator.clipboard.writeText(txt).then(()=>{ const o=e.currentTarget.innerHTML; e.currentTarget.innerHTML='Copied!';
+    if(id){ editor.setValue(JSON.stringify(JSON.parse(txt),null,2)); render(); } setTimeout(()=>e.currentTarget.innerHTML=o,1300); });
+}
+function hl(s){ s=esc(s); return s.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,m=>{ let c='json-number'; if(/^&quot;|^"/.test(m)){ c=/:$/.test(m)?'json-key':'json-string'; } else if(/true|false|null/.test(m)) c='json-boolean'; return `<span class="${c}">${m}</span>`; }); }
+async function loadGuide(){
+  const t=document.getElementById('markdown-content');
+  try{ const r=await fetch('tabota_reference_guide.md'); if(!r.ok) throw 0; t.innerHTML=marked.parse(await r.text()); }
+  catch(e){ t.innerHTML='<p class="note">The reference guide loads from <code>tabota_reference_guide.md</code> when served over a local server (see the notes about running one).</p>'; }
+}
+</script>
+</body>
+</html>

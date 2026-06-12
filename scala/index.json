@@ -1,0 +1,66 @@
+{
+  "name": "Tabota Scala library",
+  "note": "Paths are relative to this scala/ folder. Each entry: a path string, or {name, path}.",
+  "categories": [
+    {
+      "name": "Equal temperaments",
+      "files": [
+        {
+          "name": "19-EDO",
+          "path": "equal/19edo.scl"
+        },
+        {
+          "name": "24-EDO (quarter tones)",
+          "path": "equal/24edo.scl"
+        },
+        {
+          "name": "31-EDO",
+          "path": "equal/31edo.scl"
+        }
+      ]
+    },
+    {
+      "name": "Just intonation",
+      "files": [
+        {
+          "name": "Ptolemy diatonic (major)",
+          "path": "just/ptolemy_diatonic.scl"
+        },
+        {
+          "name": "Just natural minor",
+          "path": "just/just_minor.scl"
+        },
+        {
+          "name": "Harmonics 8-16",
+          "path": "just/harmonic_8_16.scl"
+        }
+      ]
+    },
+    {
+      "name": "Historical",
+      "files": [
+        {
+          "name": "Pythagorean 12",
+          "path": "historical/pythagorean12.scl"
+        },
+        {
+          "name": "1/4-comma meantone",
+          "path": "historical/quarter_comma_meantone.scl"
+        }
+      ]
+    },
+    {
+      "name": "Xenharmonic / non-octave",
+      "files": [
+        {
+          "name": "Bohlen-Pierce (13ED3)",
+          "path": "xenharmonic/bohlen_pierce.scl"
+        },
+        {
+          "name": "5-EDO (slendro-like)",
+          "path": "xenharmonic/wholetone_5edo.scl"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+! grammar_waltz.cyc
+Waltz -- three, then binary forever.
+@root: 3 > bin
+@bin: 2 > bin

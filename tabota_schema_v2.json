@@ -1,0 +1,951 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tabota.org/schema/v2.0",
+  "title": "Tabota Score Format v2",
+  "description": "A universal description language for time-based events. v2 collapses the v1.5 hierarchy (Section / Track / ChildSection / Event) into a SINGLE recursive type: the Event. Everything in a score is an Event. An Event is a bag of optional, stackable facets \u2014 frame (the old 'regime' role), value, position, extent, containment, reference, payload. None are required: an empty Event {} is valid. This is a language of description, not a scheduler: it may express relations that are under-determined, over-determined, indeterminate, or paradoxical (cyclic). Realizers (e.g. Tabota Roll, MIDI export) attempt to find a consistent assignment of times and pitches; where none exists, the realizer reports it. The schema permits what the realizer may refuse. v2.0 also carries tempo as a value (TempoValue) on pitchless tempo-track Events, lets extent name its own coordinate (Extent.in), gives metered frames a metric phase (offset), and allows a regime to hold several named secondary coordinate charts (lenses) that Events opt into.",
+  "type": "object",
+  "required": [
+    "projectName",
+    "languageVersion",
+    "score"
+  ],
+  "properties": {
+    "projectName": {
+      "type": "string"
+    },
+    "languageVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+(-[a-z]+)?$",
+      "description": "e.g. '2.0'"
+    },
+    "author": {
+      "type": "string"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "modified": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "license": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string",
+          "enum": [
+            "full",
+            "determinate"
+          ],
+          "default": "full",
+          "$comment": "Advisory conformance claim. 'determinate' asserts the score uses only the realizable fragment (no cycles, no ranges left open, every position resolvable) and is expected to round-trip to MIDI losslessly. 'full' makes no such promise. The schema does not enforce this; it is a contract for tools."
+        }
+      }
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Import"
+      }
+    },
+    "score": {
+      "type": "array",
+      "description": "The top-level Events. Equivalent to the children of an implicit root Event.",
+      "items": {
+        "$ref": "#/definitions/Event"
+      }
+    }
+  },
+  "definitions": {
+    "Event": {
+      "type": "object",
+      "description": "The single universal type. Every node in a Tabota score is an Event. All facets are optional and stackable. {} is a valid Event (an undefined event somewhere in its container \u2014 Degenerate Case 1). Add 'frame' to make it a regime; add 'value' to make it a note/lane/instruction; add 'events' to make it a container; add several to make it all at once.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Optional. Only Events the composer wishes to reference (in a relation, landmark, or ref) need an id. The decision to name an Event IS the decision to make it relatable."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "regime",
+            "note",
+            "rest",
+            "instruction",
+            "group",
+            "reference"
+          ],
+          "$comment": "Purely advisory hint for humans and editors. Does not change interpretation \u2014 interpretation follows the facets actually present. 'regime' is just an Event that carries a frame; the word survives the type merger as a role, not a type."
+        },
+        "frame": {
+          "$ref": "#/definitions/Frame",
+          "description": "REGIME FACET. Establishes the coordinate system that this Event's CHILDREN are interpreted in, and supplies the conversion keys (bpm for time, tuning for pitch). This is a SCOPE relationship only \u2014 it does not by itself set this Event's own temporal extent (see 'extent'). Children with no frame of their own inherit the nearest ancestor frame (lexical scoping over the tree)."
+        },
+        "lenses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Lens"
+          },
+          "description": "Named secondary charts over this regime's extent (alternate tempo/meter or tuning 'tabs'). The Event's own 'frame' is the PRIMARY lens \u2014 it alone defines extent and pegs the regime to seconds (via bpm) and to Hz (via tuning). Additional lenses only change how Events hung in them are read and snapped; see position.lens and Landmark.lens."
+        },
+        "value": {
+          "$ref": "#/definitions/Value",
+          "description": "VALUE FACET. What this Event IS along one or more axes \u2014 a pitch, a lane, an instruction, a velocity. Stackable across axes (a pitch AND text at once). Any sub-value may be exact, gliding, a range, or relative to another Event."
+        },
+        "position": {
+          "$ref": "#/definitions/Position",
+          "description": "POSITION FACET. When/where this Event sits, in its frame's units and/or relative to other Events. Omit entirely to let the Event float freely within its container with no defined position."
+        },
+        "extent": {
+          "$ref": "#/definitions/Extent",
+          "description": "EXTENT FACET. This Event's OWN duration / end condition \u2014 independent of which children it contains. An Event with children but no extent goes on until an end condition or until realization bounds it."
+        },
+        "events": {
+          "type": "array",
+          "description": "CONTAINMENT. Child Events. Any Event may contain Events; this is what makes the type recursive. A child may legally extend in time beyond this Event's own extent (containment is scope, not a temporal superset).",
+          "items": {
+            "$ref": "#/definitions/Event"
+          }
+        },
+        "ref": {
+          "$ref": "#/definitions/Ref",
+          "description": "REFERENCE FACET. Makes this Event an instance of another Event (local id or external file), optionally transformed. Subsumes v1.5 'reference' and 'external' event types."
+        },
+        "payload": {
+          "$ref": "#/definitions/Payload",
+          "description": "Arbitrary attached data, text, comments, performance conditions. The open extension point \u2014 additionalProperties allowed here, unlike on the Event itself."
+        }
+      }
+    },
+    "Frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The regime facet. Both halves are optional and independently inheritable \u2014 a Frame may set only time (inheriting axis from an ancestor) or only axis.",
+      "properties": {
+        "temporal": {
+          "type": "string",
+          "enum": [
+            "metered",
+            "chronological",
+            "achronous"
+          ]
+        },
+        "temporalSettings": {
+          "$comment": "anyOf, not oneOf: the sibling 'temporal' enum is the real discriminator; settings shapes overlap (an achronous frame may be near-empty), so requiring exactly one match is wrong.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MeteredSettings"
+            },
+            {
+              "$ref": "#/definitions/ChronologicalSettings"
+            },
+            {
+              "$ref": "#/definitions/AchronousSettings"
+            }
+          ]
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "frequency",
+            "symbolic",
+            "categorical",
+            "instructional"
+          ]
+        },
+        "axisSettings": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FrequencySettings"
+            },
+            {
+              "$ref": "#/definitions/SymbolicSettings"
+            },
+            {
+              "$ref": "#/definitions/CategoricalSettings"
+            },
+            {
+              "$ref": "#/definitions/InstructionalSettings"
+            }
+          ]
+        }
+      }
+    },
+    "Value": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Stackable typed values. Present whichever axes apply to this Event.",
+      "properties": {
+        "pitch": {
+          "$ref": "#/definitions/PitchValue"
+        },
+        "lane": {
+          "description": "Categorical value (a named lane). Exact, or an indeterminate choice among lanes.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "anyOf": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "anyOf"
+              ]
+            }
+          ]
+        },
+        "text": {
+          "type": "string",
+          "description": "Instructional / textual content (instructional axis)."
+        },
+        "velocity": {
+          "$ref": "#/definitions/Scalar"
+        },
+        "tempo": {
+          "$ref": "#/definitions/TempoValue",
+          "description": "A tempo: the metric chart's rate, i.e. the exchange rate from this regime's beats to seconds. Carried by pitchless Events that form a regime's tempo track."
+        }
+      }
+    },
+    "PitchValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A pitch that is exact, gliding, an indeterminate band, or relative to another Event's pitch. Use 'hz' for frequency axis, 'note' for symbolic axis (realized to Hz via the nearest frame's tuning).",
+      "properties": {
+        "hz": {
+          "type": "number",
+          "minimum": 0
+        },
+        "note": {
+          "type": "string",
+          "pattern": "^[A-G][b#]?-?[0-9]$"
+        },
+        "from": {
+          "description": "Glide start. Pair with 'to'.",
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "pattern": "^[A-G][b#]?-?[0-9]$"
+            }
+          ]
+        },
+        "to": {
+          "description": "Glide end. Pair with 'from'.",
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "pattern": "^[A-G][b#]?-?[0-9]$"
+            }
+          ]
+        },
+        "interpolation": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "ease-in",
+            "ease-out",
+            "ease-in-out",
+            "step",
+            "exponential"
+          ],
+          "default": "linear"
+        },
+        "between": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Indeterminate pitch band. Bounds in Hz or note names.",
+          "properties": {
+            "low": {
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "high": {
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "intent": {
+              "type": "string",
+              "enum": [
+                "free",
+                "unspecified"
+              ],
+              "default": "free",
+              "$comment": "'free' = genuinely indeterminate, a realizer should preserve the band or choose within it but not pretend it was exact. 'unspecified' = the composer simply did not pin it down; a realizer may pick anything in range."
+            }
+          },
+          "required": [
+            "low",
+            "high"
+          ]
+        },
+        "relativeTo": {
+          "type": "string",
+          "description": "id of another Event whose pitch this one is defined against."
+        },
+        "relation": {
+          "type": "string",
+          "enum": [
+            "higher",
+            "lower",
+            "equal",
+            "near"
+          ],
+          "$comment": "Pitch counterpart of the temporal relations in Position. Use with relativeTo."
+        },
+        "offsetCents": {
+          "type": "number"
+        }
+      }
+    },
+    "Scalar": {
+      "description": "A numeric quantity that may be exact, a range, or relative. Reused for velocity and similar.",
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "between": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "intent": {
+              "type": "string",
+              "enum": [
+                "free",
+                "unspecified"
+              ],
+              "default": "free"
+            }
+          },
+          "required": [
+            "between"
+          ]
+        }
+      ]
+    },
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Any combination may be present; together they form constraints on this Event's onset. Over-determination and contradiction are permitted (the realizer resolves or reports). With nothing present, the Event floats freely in its container.",
+      "properties": {
+        "at": {
+          "type": "number",
+          "description": "Absolute onset in the governing frame's units (beats / seconds / index)."
+        },
+        "meter": {
+          "$ref": "#/definitions/MeterPosition"
+        },
+        "index": {
+          "type": "integer",
+          "description": "Ordinal position in an achronous frame."
+        },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Pin a known internal point of this Event to a time. position 0 = start, 0.5 = middle, 1 = end.",
+          "properties": {
+            "time": {
+              "type": "number"
+            },
+            "position": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "string",
+                  "pattern": "^\\d+(\\.\\d+)?%$"
+                }
+              ]
+            }
+          },
+          "required": [
+            "time",
+            "position"
+          ]
+        },
+        "relations": {
+          "type": "array",
+          "description": "Relational constraints to landmarks on OTHER Events (Allen-style). An Event may carry several; together with the cross-Event graph they may form cycles, which the language permits.",
+          "items": {
+            "$ref": "#/definitions/Relation"
+          }
+        },
+        "between": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Indeterminate onset window. Bounds may be numeric (frame units) or Landmarks ('sometime between Event B and Event C').",
+          "properties": {
+            "from": {
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "$ref": "#/definitions/Landmark"
+                }
+              ]
+            },
+            "to": {
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "$ref": "#/definitions/Landmark"
+                }
+              ]
+            },
+            "intent": {
+              "type": "string",
+              "enum": [
+                "free",
+                "unspecified"
+              ],
+              "default": "free"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        },
+        "lens": {
+          "type": "string",
+          "description": "Names which lens (a secondary chart on the governing regime, Lens.id) this Event's at/meter/index is expressed in. Omit to use the regime's primary frame."
+        }
+      }
+    },
+    "Relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "of"
+      ],
+      "description": "A qualitative temporal relation between this Event (the subject X) and a landmark on another Event (Y), using Allen's interval-algebra notation. Subject-relative: X r Y. Optional quantitative 'offset' adds a metric gap. Nesting (events:[]) is NOT one of these \u2014 nesting is a scope/inheritance edge (see Event.frame), and the temporal relation between a container and its child is a separate, free relation that defaults to 'd' in the Roll but is unconstrained in the language.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "b",
+            "bi",
+            "m",
+            "mi",
+            "o",
+            "oi",
+            "s",
+            "si",
+            "d",
+            "di",
+            "f",
+            "fi",
+            "="
+          ],
+          "$comment": "Allen's 13: b before / bi after \u00b7 m meets / mi met-by \u00b7 o overlaps / oi overlapped-by \u00b7 s starts / si started-by \u00b7 d during / di contains \u00b7 f finishes / fi finished-by \u00b7 = equals. Inverses included so the subject can carry the relation from either side."
+        },
+        "of": {
+          "$ref": "#/definitions/Landmark"
+        },
+        "offset": {
+          "type": "number",
+          "description": "Quantitative gap in frame units (e.g. 'after, offset 2' = 2 beats/seconds after the landmark)."
+        }
+      }
+    },
+    "Landmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A point in time located by reference. Three forms: a STRUCTURAL point on any Event (its edges/proportion), a COORDINATE inside a regime's coordinate field (a position along its expanse, in that frame's units \u2014 only Events carrying a frame can be addressed this way), or the score DATUM (the temporal reference point z, 'when the score starts'). 'After Note Z' is {event:'Z'}; 'beat 12 of Regime A' is {event:'A', coord:12}; 'when the score starts' is {origin:'score-start'}.",
+      "anyOf": [
+        {
+          "required": [
+            "event"
+          ]
+        },
+        {
+          "required": [
+            "origin"
+          ]
+        }
+      ],
+      "properties": {
+        "event": {
+          "type": "string",
+          "description": "id of the referenced Event."
+        },
+        "point": {
+          "type": "string",
+          "enum": [
+            "start",
+            "end",
+            "onset",
+            "middle"
+          ],
+          "default": "end",
+          "$comment": "Structural points present on ANY Event regardless of frame. 'onset' = 'start'. Default 'end' matches 'after A' = after A finishes."
+        },
+        "coord": {
+          "description": "A position INSIDE the referenced Event's own coordinate field; the Event must carry a frame. Given in that frame's units (beat/second/index, or a MeterPosition).",
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/definitions/MeterPosition"
+            }
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "score-start"
+          ],
+          "description": "The score's temporal reference point z. The one privileged ground that pins an otherwise relative web to the clock; every absolute time is, formally, a relation to this."
+        },
+        "lens": {
+          "type": "string",
+          "description": "Names which of the referenced Event's secondary lenses (Event.lenses[].id) the 'coord' is read in. Omit to read it in the referenced Event's primary frame."
+        }
+      }
+    },
+    "Extent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "This Event's own duration / end condition. Decoupled from containment: an Event may have a short extent yet contain children that outlast it, or have children and no extent at all.",
+      "properties": {
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Length in the governing frame's units."
+        },
+        "endAt": {
+          "type": "number",
+          "description": "Absolute end time in frame units."
+        },
+        "endMeter": {
+          "$ref": "#/definitions/MeterPosition"
+        },
+        "until": {
+          "$ref": "#/definitions/Landmark",
+          "description": "Ends at a landmark on another Event."
+        },
+        "end": {
+          "type": "string",
+          "enum": [
+            "open",
+            "untilChildrenEnd",
+            "untilParentEnds"
+          ],
+          "$comment": "'open' = goes on forever (a drone, an unbounded regime); representable but flagged non-exportable by realizers. 'untilChildrenEnd' = extent equals the bounding span of contained children. 'untilParentEnds' = ends when the containing Event ends."
+        },
+        "between": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Indeterminate duration window in frame units.",
+          "properties": {
+            "from": {
+              "type": "number"
+            },
+            "to": {
+              "type": "number"
+            },
+            "intent": {
+              "type": "string",
+              "enum": [
+                "free",
+                "unspecified"
+              ],
+              "default": "free"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        },
+        "in": {
+          "type": "string",
+          "enum": [
+            "seconds",
+            "milliseconds",
+            "minutes",
+            "beats",
+            "measures"
+          ],
+          "description": "Coordinate that 'duration'/'endAt' are quoted in, overriding the governing frame's own units. Lets a metered regime be pegged chronally ('50 seconds of a 120->140 ramp') or a chronal span quoted metrically, and lets a regime end irregularly off the barline (e.g. duration 2.73 in 'measures')."
+        }
+      }
+    },
+    "Ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Instance another Event by local id or external file, optionally transformed.",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Local id of the Event to instance."
+        },
+        "externalRef": {
+          "type": "string",
+          "description": "Id of an imported Event."
+        },
+        "externalFile": {
+          "type": "string",
+          "description": "Direct path to an external Tabota file."
+        },
+        "transform": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "timeOffset": {
+              "type": "number"
+            },
+            "transpose": {
+              "type": "number",
+              "description": "Pitch shift (semitones, or cents if 'unit' says so)."
+            },
+            "transposeUnit": {
+              "type": "string",
+              "enum": [
+                "semitones",
+                "cents"
+              ],
+              "default": "semitones"
+            },
+            "scale": {
+              "type": "number",
+              "description": "Time-stretch factor."
+            }
+          }
+        }
+      }
+    },
+    "MeteredSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "beats"
+      ],
+      "properties": {
+        "beats": {
+          "type": "number",
+          "minimum": 0
+        },
+        "bpm": {
+          "type": "number",
+          "minimum": 1
+        },
+        "timeSignature": {
+          "type": "string",
+          "pattern": "^\\d+/\\d+$"
+        },
+        "subdivision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "offset": {
+          "type": "number",
+          "default": 0,
+          "description": "Origin shift: the location of this frame's coordinate ZERO, as a SIGNED position from the span's start, in the frame's own unit. Positions before zero are negative, so a lead-in/anacrusis is a span whose first stretch carries negative coordinates (e.g. a 4-measure metered frame with offset = one measure of beats has its first measure running from -1 to 0). Warps the coordinate system additively; independent of tempo, and still compatible with extent. Unit: beats."
+        }
+      }
+    },
+    "ChronologicalSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "duration"
+      ],
+      "properties": {
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "units": {
+          "type": "string",
+          "enum": [
+            "seconds",
+            "milliseconds",
+            "minutes"
+          ],
+          "default": "seconds"
+        },
+        "offset": {
+          "type": "number",
+          "default": 0,
+          "description": "Origin shift: the location of this frame's coordinate ZERO, as a SIGNED position from the span's start, in the frame's own unit. Positions before zero are negative, so a lead-in/anacrusis is a span whose first stretch carries negative coordinates (e.g. a 4-measure metered frame with offset = one measure of beats has its first measure running from -1 to 0). Warps the coordinate system additively; independent of tempo, and still compatible with extent. Unit: the frame's time unit (seconds by default)."
+        }
+      }
+    },
+    "AchronousSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sequential ordering without time. 'indices' is optional now: an achronous frame may simply collect its children and let them order themselves via Position.relations.",
+      "properties": {
+        "indices": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "offset": {
+          "type": "integer",
+          "default": 0,
+          "description": "Origin shift: the location of this frame's coordinate ZERO, as a SIGNED position from the span's start, in the frame's own unit. Positions before zero are negative, so a lead-in/anacrusis is a span whose first stretch carries negative coordinates (e.g. a 4-measure metered frame with offset = one measure of beats has its first measure running from -1 to 0). Warps the coordinate system additively; independent of tempo, and still compatible with extent. Unit: index positions."
+        }
+      }
+    },
+    "FrequencySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minHz": {
+          "type": "number",
+          "minimum": 0,
+          "default": 20
+        },
+        "maxHz": {
+          "type": "number",
+          "minimum": 0,
+          "default": 20000
+        },
+        "tuning": {
+          "type": "string"
+        },
+        "a4": {
+          "type": "number",
+          "default": 440
+        }
+      }
+    },
+    "SymbolicSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tuning": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "12-TET"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "system",
+                "file"
+              ],
+              "properties": {
+                "system": {
+                  "type": "string",
+                  "const": "custom"
+                },
+                "file": {
+                  "type": "string"
+                }
+              }
+            }
+          ],
+          "default": "12-TET"
+        },
+        "a4": {
+          "type": "number",
+          "default": 440
+        }
+      }
+    },
+    "CategoricalSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "categories"
+      ],
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "InstructionalSettings": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "MeterPosition": {
+      "type": "object",
+      "required": [
+        "measure",
+        "beat"
+      ],
+      "properties": {
+        "measure": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "beat": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "Import": {
+      "type": "object",
+      "required": [
+        "id",
+        "file"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "Payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "condition": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "TempoValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tempo as a constant bpm or a ramp. Tempo-track Events tile and 'meet' because tempo is single-valued (a function of time cannot hold two values at once) \u2014 the same reason a MIDI Set-Tempo stream can only tile. A realizer integrates them to map beats <-> seconds.",
+      "properties": {
+        "bpm": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Constant tempo, in effect from this Event's onset until the next tempo Event."
+        },
+        "from": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Ramp start bpm. Pair with 'to'."
+        },
+        "to": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Ramp end bpm. Pair with 'from'."
+        },
+        "interpolation": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "ease-in",
+            "ease-out",
+            "ease-in-out",
+            "step",
+            "exponential"
+          ],
+          "default": "linear"
+        }
+      }
+    },
+    "Lens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "A named secondary coordinate chart over the SAME extent as the regime's primary frame \u2014 an alternate temporal or pitch 'lens' (a saved 'tab') for reading and snapping. A lens does NOT define the regime's extent. Events opt into it via position.lens or a landmark's lens. A fresh temporal lens mirrors the primary's rate until warped; a pitch lens re-reads the ever-present Hz axis through a different tuning.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "frame": {
+          "$ref": "#/definitions/Frame",
+          "description": "The lens's coordinate system (temporal and/or axis). A temporal lens with a bpm pegs to seconds; a pitch lens's tuning is read over Hz, which is always present."
+        },
+        "ratioToPrimary": {
+          "type": "number",
+          "description": "Optional DIRECT exchange rate to the primary lens, in lieu of a time peg: this many of the primary's beats per one of this lens's beats. Lets two meters relate to each other without time. Roll-deferred. A lens with neither a bpm nor a ratioToPrimary is unpegged \u2014 legal as pure parallel structure, but unrealizable."
+        }
+      }
+    }
+  }
+}

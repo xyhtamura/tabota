@@ -1,0 +1,47 @@
+{
+  "format": "cyc",
+  "version": 1,
+  "note": "A cycle is a tuning of time: onset phases within one period, normalized to [0,1). One cycle = one bar; set the sig to the cycle's natural span. a/b = structural metric point, 0.xx = measured microtiming.",
+  "categories": [
+    {
+      "name": "clave & timeline",
+      "files": [
+        { "path": "son_clave_32.cyc", "name": "Son clave 3-2" },
+        { "path": "son_clave_23.cyc", "name": "Son clave 2-3" },
+        { "path": "rumba_clave_32.cyc", "name": "Rumba clave 3-2" },
+        { "path": "bossa_clave.cyc", "name": "Bossa clave" },
+        { "path": "bembe_12_8.cyc", "name": "Bembé bell 12/8" }
+      ]
+    },
+    {
+      "name": "additive · aksak",
+      "files": [
+        { "path": "aksak_2_2_3.cyc", "name": "Aksak 2+2+3" },
+        { "path": "aksak_3_2_2.cyc", "name": "Aksak 3+2+2" },
+        { "path": "karsilama_9_8.cyc", "name": "Karsılama 2+2+2+3" },
+        { "path": "paidushko_5_8.cyc", "name": "Paidushko 2+3" }
+      ]
+    },
+    {
+      "name": "south american · afro-diasporic",
+      "files": [
+        { "path": "samba_16_swung.cyc", "name": "Samba 16ths (swung)" },
+        { "path": "chacarera_sesqui.cyc", "name": "Chacarera (sesquialtera)" },
+        { "path": "joropo_sesqui.cyc", "name": "Joropo (sesquialtera)" },
+        { "path": "lando_12_8.cyc", "name": "Landó 12/8" },
+        { "path": "festejo_6_8.cyc", "name": "Festejo 6/8" }
+      ]
+    },
+    {
+      "name": "grammar · recursive",
+      "files": [
+        { "path": "grammar_common.cyc", "name": "⌗ Common (4 ▸ binary)" },
+        { "path": "grammar_waltz.cyc", "name": "⌗ Waltz (3 ▸ binary)" },
+        { "path": "grammar_6_8.cyc", "name": "⌗ Compound 6/8 (2 ▸ 3)" },
+        { "path": "grammar_swing.cyc", "name": "⌗ Swing (beat ▸ 3 ▸ binary)" },
+        { "path": "grammar_special717.cyc", "name": "⌗ Special 0.717 / quarter" },
+        { "path": "grammar_hetero.cyc", "name": "⌗ Heterogeneous thirds" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+! bembe_12_8.cyc
+!
+Standard 12/8 bell (bembe), seven strokes. Structural, 12 pulses.
+7
+!
+ 2/12
+ 4/12
+ 5/12
+ 7/12
+ 9/12
+ 11/12
+ 1/1

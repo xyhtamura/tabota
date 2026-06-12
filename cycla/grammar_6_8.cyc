@@ -1,0 +1,5 @@
+! grammar_6_8.cyc
+Compound 6/8 -- two beats, each split in three.
+@root: 2 > tri
+@tri: 3 > bin
+@bin: 2 > bin

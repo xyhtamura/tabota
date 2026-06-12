@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TaboTa — title card</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  /* lifted from the family resemblance of your pages */
+  --paper:#eaf1ec;
+  --paper-2:#e3ebe6;
+  --panel:#f1ecf4;
+  --panel-2:#e7dfee;
+  --edge:#cdbcd6;
+  --edge-2:#b9cfc7;
+
+  --ink:#18302b;
+  --ink-dim:#5a6f68;
+  --ink-faint:#8a9b93;
+
+  --algae:#5d8c00;
+  --magenta:#d1336b;
+  --violet:#6a47d8;
+  --tide:#11897e;
+  --ember:#dd6b12;
+
+  --display:"Fraunces", Georgia, serif;
+  --mono:"IBM Plex Mono","SFMono-Regular",Menlo,monospace;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:var(--mono);
+  color:var(--ink);
+  background:
+    radial-gradient(1200px 700px at 10% 5%, #eef4ef 0%, transparent 50%),
+    radial-gradient(800px 500px at 90% 10%, #f3edf6 0%, transparent 52%),
+    radial-gradient(900px 600px at 50% 100%, #e5efe8 0%, transparent 55%),
+    var(--paper);
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+
+/* faint grain */
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  opacity:.045;
+  mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+.stage{
+  width:min(1100px, 92vw);
+  aspect-ratio: 16 / 9;
+  position:relative;
+  border:1px solid var(--edge);
+  border-radius:18px;
+  overflow:hidden;
+  background:
+    radial-gradient(45% 60% at 14% 18%, color-mix(in srgb, var(--tide) 13%, transparent), transparent 70%),
+    radial-gradient(32% 45% at 82% 20%, color-mix(in srgb, var(--violet) 12%, transparent), transparent 72%),
+    radial-gradient(30% 50% at 76% 78%, color-mix(in srgb, var(--ember) 11%, transparent), transparent 75%),
+    linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow:
+    0 30px 80px -45px rgba(42,26,58,.45),
+    inset 0 1px 0 rgba(255,255,255,.55);
+}
+
+/* specimen corners */
+.stage::before,
+.stage::after{
+  content:"";
+  position:absolute;
+  width:18px; height:18px;
+  border-color:var(--edge);
+  opacity:.85;
+}
+.stage::before{
+  top:12px; left:12px;
+  border-top:1px solid var(--edge);
+  border-left:1px solid var(--edge);
+}
+.stage::after{
+  right:12px; bottom:12px;
+  border-right:1px solid var(--edge);
+  border-bottom:1px solid var(--edge);
+}
+
+.inner{
+  position:absolute;
+  inset:18px;
+  border:1px solid color-mix(in srgb, var(--edge) 70%, white);
+  border-radius:14px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,.08)),
+    rgba(255,255,255,.14);
+  overflow:hidden;
+}
+
+/* soft grid */
+.grid{
+  position:absolute;
+  inset:0;
+  background:
+    repeating-linear-gradient(
+      to right,
+      transparent 0 71px,
+      rgba(24,48,43,.05) 71px 72px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 71px,
+      rgba(24,48,43,.05) 71px 72px
+    );
+  mask-image:linear-gradient(180deg, rgba(0,0,0,.7), rgba(0,0,0,.25));
+}
+
+.header{
+  position:absolute;
+  left:28px;
+  right:28px;
+  top:22px;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:20px;
+  z-index:2;
+}
+
+.kicker{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.chip{
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--ink-dim);
+  border:1px solid var(--edge);
+  background:rgba(255,255,255,.45);
+  padding:5px 8px;
+  border-radius:999px;
+  white-space:nowrap;
+}
+.chip b{color:var(--tide); font-weight:600}
+
+.index{
+  font-size:10px;
+  line-height:1.55;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--ink-faint);
+  text-align:right;
+}
+
+/* main composition */
+.content{
+  position:absolute;
+  inset:92px 30px 28px;
+  display:grid;
+  grid-template-columns: 1.05fr .95fr;
+  gap:28px;
+  align-items:stretch;
+  z-index:2;
+}
+
+.left{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:20px 12px 20px 10px;
+}
+
+.eyebrow{
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--ink-dim);
+  margin-bottom:12px;
+}
+
+.wordmark{
+  position:relative;
+  display:inline-block;
+  width:fit-content;
+}
+
+.wordmark h1{
+  margin:0;
+  font-family:var(--display);
+  font-weight:600;
+  font-size:clamp(4rem, 8vw, 7.8rem);
+  line-height:.88;
+  letter-spacing:-.05em;
+  color:var(--ink);
+  text-wrap:balance;
+}
+
+.wordmark .accent{
+  color:var(--tide);
+  font-style:italic;
+  font-weight:500;
+}
+
+.wordmark .field{
+  color:var(--algae);
+  font-style:normal;
+  letter-spacing:-.03em;
+}
+
+.wordmark .underline{
+  margin-top:12px;
+  width:78%;
+  height:10px;
+  border-radius:999px;
+  background:
+    linear-gradient(90deg,
+      var(--algae) 0 28%,
+      transparent 28% 34%,
+      var(--magenta) 34% 64%,
+      transparent 64% 70%,
+      var(--violet) 70% 100%);
+  opacity:.95;
+  box-shadow:0 0 0 1px rgba(255,255,255,.45);
+}
+
+.desc{
+  margin-top:20px;
+  max-width:40ch;
+  font-size:13px;
+  line-height:1.75;
+  color:var(--ink-dim);
+}
+.desc b{color:var(--ink)}
+
+.meta-row{
+  margin-top:22px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+.meta-pill{
+  border:1px solid var(--edge-2);
+  background:rgba(255,255,255,.42);
+  color:var(--ink-dim);
+  padding:7px 10px;
+  border-radius:10px;
+  font-size:11px;
+}
+.meta-pill strong{
+  color:var(--tide);
+  font-weight:600;
+}
+
+/* right = event-diagram / logo ecology */
+.right{
+  position:relative;
+  border:1px solid var(--edge);
+  border-radius:18px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.36), rgba(255,255,255,.12)),
+    var(--paper-2);
+  overflow:hidden;
+  min-height:100%;
+}
+
+.right::before{
+  content:"";
+  position:absolute;
+  inset:18px;
+  border:1px dashed rgba(24,48,43,.18);
+  border-radius:12px;
+}
+
+.diagram-label{
+  position:absolute;
+  top:16px;
+  left:18px;
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--ink-faint);
+}
+
+.axis-x,.axis-y{
+  position:absolute;
+  background:rgba(24,48,43,.12);
+}
+.axis-x{left:58px; right:28px; bottom:60px; height:1px;}
+.axis-y{top:48px; bottom:60px; left:58px; width:1px;}
+
+.axis-caption{
+  position:absolute;
+  font-size:10px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--ink-faint);
+}
+.axis-caption.x{right:30px; bottom:38px;}
+.axis-caption.y{left:18px; top:58px; writing-mode:vertical-rl; transform:rotate(180deg);}
+
+.note-line,
+.glide-line,
+.free-line,
+.hold-bar,
+.node,
+.payload{
+  position:absolute;
+}
+
+.hold-bar{
+  left:92px; top:112px;
+  width:178px; height:8px;
+  background:var(--algae);
+  border-radius:999px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.7);
+}
+
+.note-line{
+  left:165px; top:188px;
+  width:150px; height:4px;
+  background:var(--magenta);
+  transform:rotate(-18deg);
+  transform-origin:left center;
+  border-radius:999px;
+}
+
+.free-line{
+  left:102px; top:262px;
+  width:220px; height:110px;
+}
+.free-line svg{
+  width:100%; height:100%;
+}
+.free-line path{
+  fill:none;
+  stroke:var(--violet);
+  stroke-width:5;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.node{
+  width:14px; height:14px;
+  border-radius:50%;
+  background:var(--tide);
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,.85),
+    0 0 0 3px color-mix(in srgb, var(--tide) 70%, transparent);
+}
+.node.a{left:86px; top:108px}
+.node.b{left:262px; top:108px; background:var(--algae)}
+.node.c{left:160px; top:183px; background:var(--magenta)}
+.node.d{left:305px; top:139px; background:var(--magenta)}
+.node.e{left:98px; top:292px; background:var(--violet)}
+.node.f{left:178px; top:238px; background:var(--violet)}
+.node.g{left:258px; top:314px; background:var(--violet)}
+
+.payload{
+  font-size:10px;
+  color:var(--ink-dim);
+  letter-spacing:.08em;
+  background:rgba(255,255,255,.52);
+  border:1px solid var(--edge);
+  border-radius:999px;
+  padding:4px 8px;
+}
+.payload.p1{left:290px; top:98px}
+.payload.p2{left:215px; top:200px}
+.payload.p3{left:272px; top:290px}
+
+.mini-list{
+  position:absolute;
+  right:18px;
+  top:54px;
+  width:140px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.mini-item{
+  font-size:10px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--ink-dim);
+  border:1px solid var(--edge);
+  background:rgba(255,255,255,.45);
+  border-radius:8px;
+  padding:7px 9px;
+}
+.mini-item b{display:block; color:var(--ink); margin-bottom:4px; letter-spacing:.04em; text-transform:none}
+
+.footer{
+  position:absolute;
+  left:28px;
+  right:28px;
+  bottom:16px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:18px;
+  z-index:2;
+}
+
+.legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:14px;
+  font-size:11px;
+  color:var(--ink-dim);
+}
+.legend span{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+.sw{
+  width:18px;
+  height:0;
+  border-top:4px solid;
+  border-radius:999px;
+}
+.sw.h{border-color:var(--algae)}
+.sw.g{border-color:var(--magenta)}
+.sw.f{border-color:var(--violet)}
+
+.sig{
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--ink-faint);
+}
+
+/* optional slow float */
+.inner,
+.right{
+  animation: drift 12s ease-in-out infinite alternate;
+}
+@keyframes drift{
+  from{transform:translateY(0)}
+  to{transform:translateY(-2px)}
+}
+
+@media (max-width: 900px){
+  .stage{aspect-ratio:auto; min-height:780px}
+  .content{
+    grid-template-columns:1fr;
+    inset:92px 22px 24px;
+  }
+  .right{min-height:360px}
+  .footer{
+    position:relative;
+    left:auto; right:auto; bottom:auto;
+    margin:0 22px 18px;
+    flex-direction:column;
+    align-items:flex-start;
+  }
+}
+</style>
+</head>
+<body>
+  <section class="stage">
+    <div class="inner">
+      <div class="grid"></div>
+
+      <div class="header">
+        <div class="kicker">
+          <div class="chip"><b>TaboTa</b> specimen</div>
+          <div class="chip">post-midi event language</div>
+          <div class="chip">score / relation / realization</div>
+        </div>
+        <div class="index">
+          title card<br>
+          v.visual study
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="left">
+          <div class="eyebrow">A language for describing time-based events</div>
+
+          <div class="wordmark">
+            <h1>Tabo<span class="accent">Ta</span> <span class="field">田</span></h1>
+            <div class="underline"></div>
+          </div>
+
+          <div class="desc">
+            A graphic interpretation of <b>TaboTa</b> as a field of notation:
+            equal parts score language, interface ecology, and microtonal /
+            intermedia composition system.
+          </div>
+
+          <div class="meta-row">
+            <div class="meta-pill"><strong>temporal</strong> metered · chronological · achronous</div>
+            <div class="meta-pill"><strong>axis</strong> frequency · symbolic · categorical · instructional</div>
+            <div class="meta-pill"><strong>event</strong> frame · value · position · extent</div>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="diagram-label">event field</div>
+          <div class="axis-x"></div>
+          <div class="axis-y"></div>
+          <div class="axis-caption x">time / relation</div>
+          <div class="axis-caption y">pitch / value</div>
+
+          <div class="hold-bar"></div>
+          <div class="note-line"></div>
+
+          <div class="free-line">
+            <svg viewBox="0 0 220 110" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M5 76 C 35 86, 56 20, 87 30 S 147 98, 175 84 S 205 48, 215 54"></path>
+            </svg>
+          </div>
+
+          <div class="node a"></div>
+          <div class="node b"></div>
+          <div class="node c"></div>
+          <div class="node d"></div>
+          <div class="node e"></div>
+          <div class="node f"></div>
+          <div class="node g"></div>
+
+          <div class="payload p1">hold</div>
+          <div class="payload p2">glide</div>
+          <div class="payload p3">freehand contour</div>
+
+          <div class="mini-list">
+            <div class="mini-item">
+              <b>Frame</b>
+              governing coordinate field
+            </div>
+            <div class="mini-item">
+              <b>Value</b>
+              pitch / lane / text / velocity
+            </div>
+            <div class="mini-item">
+              <b>Ref</b>
+              relation and inheritance
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="legend">
+          <span><i class="sw h"></i> hold</span>
+          <span><i class="sw g"></i> glide</span>
+          <span><i class="sw f"></i> free</span>
+        </div>
+        <div class="sig">TaboTa · title card / logo study</div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

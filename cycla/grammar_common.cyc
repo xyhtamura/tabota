@@ -1,0 +1,4 @@
+! grammar_common.cyc
+Common time -- four, then binary forever.
+@root: 4 > bin
+@bin: 2 > bin
