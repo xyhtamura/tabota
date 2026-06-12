@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f1ecf4'/%3E%3Crect x='2.5' y='2.5' width='27' height='27' rx='5.5' fill='%23eaf1ec' stroke='%23cdbcd6' stroke-width='1.2'/%3E%3Ctext x='16' y='22.2' text-anchor='middle' font-family='Georgia, serif' font-size='20' font-weight='700' fill='%235d8c00'%3E田%3C/text%3E%3C/svg%3E">
 <style>
 :root{
   --paper:#eaf1ec; --note-bg:#e3ebe6; --panel:#f1ecf4; --panel-2:#e7dfee;
@@ -123,6 +122,9 @@ textarea#grammar:focus{ outline:none; border-color:var(--tide); box-shadow:0 0 0
             <option value="waltz">Waltz — 3 then binary</option>
             <option value="compound">6/8 — 2 then triple</option>
             <option value="nineeight">9/8 — 3 then triple</option>
+            <option value="fiveeight_flat">5/8 — five equal pulses</option>
+            <option value="fiveeight_2p3">5/8 — additive 2+3</option>
+            <option value="fiveeight_3p2">5/8 — additive 3+2</option>
             <option value="swing">Swing — binary, beat in 3, binary</option>
             <option value="aksak">Aksak 2+2+3 (additive)</option>
             <option value="hetero">Heterogeneous — 3, then A½ · B· · C⅓</option>
@@ -251,6 +253,9 @@ const PRESETS={
   waltz:   "Waltz — three, then binary\n@root: 3 > bin\n@bin: 2 > bin",
   compound:"6/8 — two beats, each in three\n@root: 2 > tri\n@tri: 3 > bin\n@bin: 2 > bin",
   nineeight:"9/8 — three beats, each in three\n@root: 3 > tri\n@tri: 3 > bin\n@bin: 2 > bin",
+  fiveeight_flat:"5/8 — five equal eighth notes\n! sig: 5/8\n@root: 5 > bin\n@bin: 2 > bin",
+  fiveeight_2p3:"5/8 — additive 2+3\n! sig: 5/8\n@root: 2 3 > bin tri\n@tri: 3 > bin\n@bin: 2 > bin",
+  fiveeight_3p2:"5/8 — additive 3+2\n! sig: 5/8\n@root: 3 2 > tri bin\n@tri: 3 > bin\n@bin: 2 > bin",
   swing:   "Swing — beat splits in three, then binary\n@root: 4 > sw\n@sw: 3 > bin\n@bin: 2 > bin",
   aksak:   "Aksak 2+2+3 — additive seven\n@root: 2 2 3 > bin\n@bin: 2 > bin",
   hetero:  "Heterogeneous thirds — A halves, B stops, C in thirds\n@root: 3 > half _ thirds\n@half: 2 > _\n@thirds: 3 > _",

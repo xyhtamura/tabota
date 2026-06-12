@@ -231,18 +231,10 @@ footer code{font-family:var(--mono); color:var(--ink)}
       <button data-r="meter" class="on">meter</button>
       <button data-r="time">time</button>
     </div>
-    <select id="cycleSel" title="active cycle — a tuning of time; defines the metric grid &amp; snap (not the stored beats). One cycle = one bar; calibrate its span with the sig / =♩"></select>
+    <select id="cycleSel" title="active cycle — a tuning of time; defines the metric grid &amp; snap (not the stored beats). One cycle = one bar — set the sig to the cycle's natural span."></select>
     <input type="number" id="cycDepth" class="w48" value="3" min="1" max="7" title="subdivision depth — how deep grammar cycles generate their grid &amp; snap (ignored by flat cycles)">
     <button class="tool" id="loadCyc" title="load .cyc / .txt meter file(s)">⤓ .cyc</button>
     <input type="file" id="cycFile" accept=".cyc,.txt,text/plain" multiple style="display:none">
-    <span id="timeCalib" style="display:inline-flex;align-items:center;gap:5px">
-      <label>♩=</label><input type="number" id="bpm" value="120" min="20" max="400" step="1" title="tempo — quarter notes per minute, the host clock the denominator scales against">
-      <label>sig</label><input type="number" id="sigNum" class="w48" value="4" min="0.25" max="64" step="any" title="beats per bar (fractional welcome — 5/8 ≡ 2.5/4)"> /
-      <input type="number" id="sigDen" class="w48" value="4" min="0.5" max="64" step="any" title="the bar's counting unit, as a note value — 8 counts eighths; non-standard values (8.4…) welcome, the grid is denominator-agnostic">
-      <label title="the same setting, generalized: the bar's span in quarter-durations of the ♩= clock. 5/8 reads 2.5; editing it rewrites the numerator">=</label><input type="number" id="sigSpan" class="w48" step="any" min="0.0625" title="bar span in ♩ — the host parameter the sig notates; edit either view">
-      <span style="color:var(--ink-dim)">♩</span>
-      <button class="tool" id="sigGhost" title="">⌗</button>
-    </span>
   </div>
   <div class="group">
     <label>region · pitch</label>
@@ -254,7 +246,6 @@ footer code{font-family:var(--mono); color:var(--ink)}
     <select id="scaleRoot" title="anchor the scale's 1/1 to this note"></select>
     <button class="tool" id="loadScl" title="load .scl file(s)">⤓ .scl</button>
     <input type="file" id="sclFile" accept=".scl" multiple style="display:none">
-    <label>A4</label><input type="number" id="a4" value="440" min="380" max="500" step="0.1" title="pitch calibration — the A4 reference the scale's lattice hangs from (the time panel's ♩= twin)">
   </div>
 
   <div class="group">
@@ -262,13 +253,11 @@ footer code{font-family:var(--mono); color:var(--ink)}
     <select id="grid" title="grid resolution">
 <option value="1">𝅝</option>
   <option value="2">𝅗𝅥</option>
-  <option value="4">♩</option>
+  <option value="4" selected>♩</option>
   <option value="8">♪</option>
-  <option value="16" selected>𝅘𝅥𝅯</option>
+  <option value="16">𝅘𝅥𝅯</option>
   <option value="3">𝅗𝅥³</option>
   <option value="6">♩³</option>
-  <option value="32">𝅘𝅥𝅰</option>
-  <option value="12">♪³</option>
     </select>
     <label class="chk"><input type="checkbox" id="snapPitch" checked> snap&nbsp;pitch</label>
   </div>
@@ -304,6 +293,12 @@ footer code{font-family:var(--mono); color:var(--ink)}
 </div>
 
 <div class="toolbar" style="border-top:none">
+  <div class="group" id="tempoGroup">
+    <label>bpm</label><input type="number" id="bpm" value="120" min="20" max="400" step="1">
+    <label>sig</label><input type="number" id="sigNum" class="w48" value="4" min="1" max="32"> / 
+    <select id="sigDen"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>16</option></select>
+    <label>A4</label><input type="number" id="a4" value="440" min="380" max="500" step="0.1">
+  </div>
   <div class="group">
     <label title="voice 1 uses this channel, voice 2 the next, etc.">base ch</label><input type="number" id="channel" class="w48" value="1" min="1" max="16">
     <label>prog</label><input type="number" id="program" class="w48" value="0" min="0" max="127">
@@ -602,7 +597,7 @@ let DPR=Math.max(1,window.devicePixelRatio||1);
 /* ---- view state ---- */
 const view={
   pxPerSec:128, pxPerSemi:14,            // seconds is the canvas's true axis
-  get pxPerBeat(){ return this.pxPerSec/unitsPerSec(mainSystem()); },  // px per region-local UNIT (a 1/sigDen note), derived per the active chart
+  get pxPerBeat(){ return this.pxPerSec*60/(+bpm.value||120); },  // derived per the active region's tempo
   scrollX:0, scrollY:0,                // px
   midiMin:24, midiMax:108,             // C1..C8
   tool:'hold', timeRegime:'meter', pitchRegime:'scale',
@@ -611,8 +606,7 @@ const settings={
   get bpm(){return +bpm.value||120;}, get sigNum(){return +sigNum.value||4;},
   get sigDen(){return +sigDen.value||4;}, get a4(){return +a4.value||440;},
   get range(){return +bendRange.value||2;}, get grid(){return +grid.value||4;},
-  get defLen(){ const v=+defLen.value||1; const m=mainSystem();   // dropdown names a note value (quarters); units are 1/sigDen notes
-    return m.kind==='chronological'? v : v*((m.sigDen||4)/4); }, get bars(){return +bars.value||8;},
+  get defLen(){return +defLen.value||1;}, get bars(){return +bars.value||8;},
   get snapTime(){return snapTime.checked;}, get snapPitch(){return snapPitch.checked;},
 };
 let notes=[];
@@ -642,7 +636,6 @@ function applyRegionToControls(r){          // active region's main -> DOM (impo
   const m=mainSystem(r); if(!m) return;
   bpm.value=Math.round(m.bpm); sigNum.value=m.sigNum||4; sigDen.value=m.sigDen||4; a4.value=m.a4||440;
   if(m.bars) bars.value=m.bars;
-  if(typeof refreshSigUI==='function') refreshSigUI();
 }
 function normalizeNotes(){                   // every note belongs to the active region & hangs on its main
   const r=activeRegion(); const mid=r.main;
@@ -652,11 +645,7 @@ function normalizeNotes(){                   // every note belongs to the active
 /* ---- hybrid notes: the END point may hang on another region (chart model: per-point hangsOn).
    The hang {region, beat} is authoritative; n.dur is DERIVED from it in home units, so all
    existing draw / hit / play / export code keeps reading start+dur and stays correct. ---- */
-/* THE DENOMINATOR IS REAL: a region's local unit is one 1/sigDen note. bpm stays anchored
-   to the quarter (♩=bpm is the host clock calibration), so 5/8 @ ♩120 ticks eighths at 240/min
-   and a bar spans 2.5 quarter-durations — the "2.5/4" equivalence, honest in seconds. */
-function unitsPerSec(m){ return m.kind==='chronological'?1:(m.bpm/60)*((m.sigDen||4)/4); }
-function quartersPerBar(m){ return (m.sigNum||4)*4/(m.sigDen||4); }   // the host span parameter (one number; num/den is its notational factoring)
+function unitsPerSec(m){ return m.kind==='chronological'?1:m.bpm/60; }
 function noteStartSec(n){ const r=regionById(n.region), m=mainSystem(r); return regionStartSec(r)+n.start/unitsPerSec(m); }
 function normalizeHybrids(){
   for(const n of notes){
@@ -723,7 +712,7 @@ function deleteRegion(id){
 function renameRegion(id){ const r=regions.find(x=>x.id===id); if(!r) return; const n=prompt('Region name:', r.name||r.id); if(n!=null && n.trim()){ r.name=n.trim(); if(typeof draw==='function') draw(); updateRegionIndicator(); } }
 function updateRegionIndicator(){ const el=document.getElementById('activeRegionName'); const r=activeRegion(), m=mainSystem(r);
   if(el){ el.textContent = (r.name||r.id) + (m? (m.kind==='chronological' ? '  free time' : ('  \u2669'+Math.round(m.bpm)+' '+(m.sigNum||4)+'/'+(m.sigDen||4))) : ''); }
-  const tg=document.getElementById('timeCalib'); if(tg) tg.style.display = (m && m.kind==='chronological') ? 'none' : '';   // free time has no tempo/meter calibration (A4 lives with pitch and stays)
+  const tg=document.getElementById('tempoGroup'); if(tg) tg.style.display = (m && m.kind==='chronological') ? 'none' : '';   // free time has no tempo/meter/A4
   const bl=document.getElementById('barsLabel'); if(bl) bl.textContent = (m && m.kind==='chronological') ? 'secs' : 'bars';  // free-time extent is plain seconds
 }
 function renderRegionTabs(){ updateRegionIndicator(); }   // tab strip removed — on-canvas region labels are the tabs
@@ -776,7 +765,7 @@ function splitRegionAt(r, cutBeat){
   changed(); updateRegionIndicator(); flash('sliced into 2 regions');
 }
 /* ---- boundary merge / cannibalism: move the A|B boundary, conserving every note's seconds ---- */
-function regUnitSec(m){ return m.kind==='chronological' ? 1 : (m.sigNum||4)/unitsPerSec(m); }   // seconds per "snap unit" (a bar, or 1s)
+function regUnitSec(m){ return m.kind==='chronological' ? 1 : (m.sigNum||4)*60/(m.bpm||120); }   // seconds per "snap unit" (a bar, or 1s)
 function snapBoundarySec(sec, i, mode){
   if(!settings.snapTime) return sec;
   if(mode==='left'||mode==='end'){ const m=mainSystem(regions[i]), st=regionStartSec(regions[i]); const u=regUnitSec(m);
@@ -792,19 +781,19 @@ function moveBoundary(i, newBoundarySec){
   const lm=mainSystem(left), rm=mainSystem(right);
   // record affected notes' absolute seconds BEFORE resizing (start AND end — shape is conserved in time)
   const aff=notes.filter(n=>n.region===left.id||n.region===right.id).map(n=>{
-    const r=regionById(n.region), m=mainSystem(r), rs=regionStartSec(r), spb=1/unitsPerSec(m);
+    const r=regionById(n.region), m=mainSystem(r), rs=regionStartSec(r), spb=m.kind==='chronological'?1:60/m.bpm;
     return {n, sec: rs+n.start*spb, endSec: rs+(n.start+(n.dur||0))*spb};
   });
   const hangPre=new Map();   // pre-resize absolute seconds of every hang pointing at either region
   for(const n of notes){ if(n.end&&(n.end.region===left.id||n.end.region===right.id)){
     const er=regionById(n.end.region); hangPre.set(n, regionStartSec(er)+n.end.beat/unitsPerSec(mainSystem(er))); } }
   // resize both regions to meet at the new boundary
-  lm.bars = (newBoundarySec-leftStart)/regUnitSec(lm);
-  rm.bars = (rightEnd-newBoundarySec)/regUnitSec(rm);
+  lm.bars = lm.kind==='chronological'? (newBoundarySec-leftStart) : (newBoundarySec-leftStart)*lm.bpm/60/(lm.sigNum||4);
+  rm.bars = rm.kind==='chronological'? (rightEnd-newBoundarySec) : (rightEnd-newBoundarySec)*rm.bpm/60/(rm.sigNum||4);
   // reassign each note to whichever region now owns its onset; recompute local beats AND duration (seconds conserved)
   for(const {n,sec,endSec} of aff){
     const goLeft = sec < newBoundarySec-1e-9;
-    const m = goLeft?lm:rm, origin = goLeft?leftStart:newBoundarySec, ups = unitsPerSec(m);  // units per second
+    const m = goLeft?lm:rm, origin = goLeft?leftStart:newBoundarySec, ups = m.kind==='chronological'?1:m.bpm/60;  // units per second
     n.region = goLeft?left.id:right.id;
     n.start = (sec-origin)*ups;
     n.dur   = Math.max(1e-4,(endSec-sec)*ups);
@@ -843,7 +832,7 @@ function pitchBoundaryAt(p){
 function resizeLastRegion(newEndSec){
   const last=regions[regions.length-1], m=mainSystem(last), ls=regionStartSec(last);
   newEndSec=Math.max(ls+0.25,newEndSec);
-  m.bars = (newEndSec-ls)/regUnitSec(m);
+  m.bars = m.kind==='chronological' ? (newEndSec-ls) : (newEndSec-ls)*m.bpm/60/(m.sigNum||4);
   applyRegionToControls(activeRegion()); changed();
 }
 let selection=new Set();
@@ -946,21 +935,19 @@ const BUILTIN_CYCLES={
   'tresillo': {name:'Tresillo 3+3+2', phasesNorm:[0, 3/8, 3/4], period:1},
   'son32':    {name:'Son clave 3-2', phasesNorm:[0, 3/16, 3/8, 5/8, 3/4], period:1},
   'rumba32':  {name:'Rumba clave 3-2', phasesNorm:[0, 3/16, 7/16, 5/8, 3/4], period:1},
-  'bembe':    {name:'Bembé bell 12/8', phasesNorm:[0,2/12,4/12,5/12,7/12,9/12,11/12], period:1, sigHint:{num:12,den:8}},
-  'aksak223': {name:'Aksak 2+2+3', phasesNorm:[0, 2/7, 4/7], period:1, sigHint:{num:7,den:8}},
-  'aksak322': {name:'Aksak 3+2+2', phasesNorm:[0, 3/7, 5/7], period:1, sigHint:{num:7,den:8}},
+  'bembe':    {name:'Bembé bell 12/8', phasesNorm:[0,2/12,4/12,5/12,7/12,9/12,11/12], period:1},
+  'aksak223': {name:'Aksak 2+2+3', phasesNorm:[0, 2/7, 4/7], period:1},
+  'aksak322': {name:'Aksak 3+2+2', phasesNorm:[0, 3/7, 5/7], period:1},
   'swing8':   {name:'Swing 8ths (triplet)', phasesNorm:[0, 1/6, 1/4, 5/12, 1/2, 2/3, 3/4, 11/12], period:1},
   'samba16':  {name:'Samba 16ths (swung)', phasesNorm:[
                  0, .0725, .125, .1975,  .25, .3225, .375, .4475,
                  .5, .5725, .625, .6975,  .75, .8225, .875, .9475], period:1},
   // grammar built-ins (recursive; respond to the depth control)
-  'g_common': {name:'⌗ Common (4 ▸ binary)', kind:'grammar', src:'@root: 4 > bin\n@bin: 2 > bin', sigHint:{num:4,den:4}},
-  'g_waltz':  {name:'⌗ Waltz (3 ▸ binary)', kind:'grammar', src:'@root: 3 > bin\n@bin: 2 > bin', sigHint:{num:3,den:4}},
-  'g_68':     {name:'⌗ Compound 6/8 (2 ▸ 3)', kind:'grammar', src:'@root: 2 > tri\n@tri: 3 > bin\n@bin: 2 > bin', sigHint:{num:6,den:8}},
-  'g_58_23':  {name:'⌗ 5/8 additive (2+3)', kind:'grammar', src:'@root: 2 3 > bin tri\n@tri: 3 > bin\n@bin: 2 > bin', sigHint:{num:5,den:8}},
-  'g_58_32':  {name:'⌗ 5/8 additive (3+2)', kind:'grammar', src:'@root: 3 2 > tri bin\n@tri: 3 > bin\n@bin: 2 > bin', sigHint:{num:5,den:8}},
-  'g_swing':  {name:'⌗ Swing (beat ▸ 3 ▸ binary)', kind:'grammar', src:'@root: 4 > sw\n@sw: 3 > bin\n@bin: 2 > bin', sigHint:{num:4,den:4}},
-  'g_717':    {name:'⌗ Special 0.717 / quarter', kind:'grammar', src:'@root: 4 > q\n@q: 0.717 0.283', sigHint:{num:4,den:4}},
+  'g_common': {name:'⌗ Common (4 ▸ binary)', kind:'grammar', src:'@root: 4 > bin\n@bin: 2 > bin'},
+  'g_waltz':  {name:'⌗ Waltz (3 ▸ binary)', kind:'grammar', src:'@root: 3 > bin\n@bin: 2 > bin'},
+  'g_68':     {name:'⌗ Compound 6/8 (2 ▸ 3)', kind:'grammar', src:'@root: 2 > tri\n@tri: 3 > bin\n@bin: 2 > bin'},
+  'g_swing':  {name:'⌗ Swing (beat ▸ 3 ▸ binary)', kind:'grammar', src:'@root: 4 > sw\n@sw: 3 > bin\n@bin: 2 > bin'},
+  'g_717':    {name:'⌗ Special 0.717 / quarter', kind:'grammar', src:'@root: 4 > q\n@q: 0.717 0.283'},
 };
 let CYCLES=Object.assign({},BUILTIN_CYCLES);
 let activeCycleId='even';
@@ -970,7 +957,6 @@ let cycleManifest=null;
 /* ---- element refs ---- */
 const bpm=document.getElementById('bpm'), sigNum=document.getElementById('sigNum'),
  sigDen=document.getElementById('sigDen'), a4=document.getElementById('a4'),
- sigSpan=document.getElementById('sigSpan'), sigGhost=document.getElementById('sigGhost'),
  bendRange=document.getElementById('bendRange'), channel=document.getElementById('channel'),
  program=document.getElementById('program'), vel=document.getElementById('vel'),
  ppq=document.getElementById('ppq'), grid=document.getElementById('grid'),
@@ -986,18 +972,18 @@ function totalBeats(){ return settings.bars*settings.sigNum; }
 function secToX(sec){ return GUT_L - view.scrollX + sec*view.pxPerSec; }
 function xToSec(x){ return (x - GUT_L + view.scrollX)/view.pxPerSec; }
 /* region tiling on the global clock */
-function regionSecLen(r){ const m=mainSystem(r); const units=(m.bars||settings.bars)*(m.sigNum||4);
-  return m.kind==='chronological' ? (m.bars||settings.bars) : units/unitsPerSec(m); }
+function regionSecLen(r){ const m=mainSystem(r); const beats=(m.bars||settings.bars)*(m.sigNum||4);
+  return m.kind==='chronological' ? (m.bars||settings.bars) : beats*60/(m.bpm||120); }
 function regionStartSec(r){ let s=0; for(const x of regions){ if(x.id===r.id) break; s+=regionSecLen(x); } return s; }
 function regionAtSec(sec){ let s=0; for(const r of regions){ const len=regionSecLen(r); if(sec<s+len) return r; s+=len; } return regions[regions.length-1]||activeRegion(); }
 function regionAtX(x){ return regionAtSec(xToSec(x)); }
 /* a region-local beat -> x, for any region (the backdrop uses this; the active region is the default) */
 let _ctxRegion=null;   // drawing/hit-test context: which region's coordinates beatToX uses (null = active)
 function regionById(id){ return regions.find(r=>r.id===id)||activeRegion(); }
-function beatToSecIn(b,r){ const m=mainSystem(r); return regionStartSec(r) + b/unitsPerSec(m); }
+function beatToSecIn(b,r){ const m=mainSystem(r); return regionStartSec(r) + (m.kind==='chronological'? b : b*60/(m.bpm||120)); }
 function beatToXin(b,r){ return secToX(beatToSecIn(b,r)); }
 function beatToX(b){ return beatToXin(b, _ctxRegion||activeRegion()); }
-function xToBeat(x){ const r=activeRegion(); const m=mainSystem(r); const sec=xToSec(x)-regionStartSec(r); return sec*unitsPerSec(m); }
+function xToBeat(x){ const r=activeRegion(); const m=mainSystem(r); const sec=xToSec(x)-regionStartSec(r); return m.kind==='chronological'? sec : sec*(m.bpm||120)/60; }
 /* ---- cross-region kit: drags work in seconds (the one true axis) and re-enter any chart honestly ----
    "snapping vs hanging are different verbs": the cursor snaps to whichever region's grid it is OVER,
    while the value is stored in the note's HOME units — allegiance is decided later by deriveHang. */
@@ -1012,7 +998,7 @@ function snapSecToChart(sec){
   const r=regionAtSec(sec), m=mainSystem(r), s0=regionStartSec(r);
   const local=(sec-s0)*unitsPerSec(m);
   const snapped = (r.id===activeRegionId) ? snapBeat(local)                       // active region keeps its cycle-aware snap
-    : (m.kind==='chronological' ? Math.round(local) : Math.round(local/gridStepUnits(m))*gridStepUnits(m));
+    : (m.kind==='chronological' ? Math.round(local) : Math.round(local*settings.grid)/settings.grid);
   return s0+snapped/unitsPerSec(m);
 }
 /* cursor x -> beat in region r's chart, snapped to the chart under the cursor, clamped to content */
@@ -1033,11 +1019,6 @@ function clampScroll(){
 }
 
 /* ---- snapping ---- */
-/* grid step in region-local units: the dropdown names a NOTE VALUE (a 1/div whole note);
-   one unit is a 1/sigDen note, so the step is sigDen/div units — ♪ snaps eighths in any meter.
-   Chronological keeps the old 1/div as a fine fraction of a second (snap there is whole seconds). */
-function gridStepUnits(m){ m=m||mainSystem(); const div=settings.grid||4;
-  return m.kind==='chronological' ? 1/div : (m.sigDen||4)/div; }
 function snapBeat(b){
   if(!settings.snapTime) return b;
   if(mainSystem().kind==='chronological') return Math.round(b);   // free time: snap to whole seconds, never a 4/4
@@ -1049,7 +1030,7 @@ function snapBeat(b){
     for(const c of cands){ const dd=Math.abs(frac-c); if(dd<bd){bd=dd; best=c;} }
     return (bar+best)*bpb;
   }
-  const step=gridStepUnits(mainSystem()); return Math.round(b/step)*step;
+  const div=settings.grid; return Math.round(b*div)/div;
 }
 function scaleRootHz(){ return midiToFreq(scaleRootMidi,settings.a4); }
 function snapToScale(hz,sc){
@@ -1208,26 +1189,23 @@ function drawTimeGrid(W,H){
     for(let bar=firstBar; bar<=lastBar; bar++){ const x=beatToX(bar*bpb);
       ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
   } else if(view.timeRegime==='meter'){
-    const step=gridStepUnits(mainSystem());
+    const sub=settings.grid;
     const firstB=Math.floor(xToBeat(GUT_L)), lastB=Math.ceil(xToBeat(W));
-    // subdivisions (only when finer than the unit lines)
-    if(step<0.999 && view.pxPerBeat*step>=6){
+    // subdivisions
+    if(view.pxPerBeat/sub>=6){
       ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
-      for(let b=Math.floor(firstB/step)*step; b<=lastB; b+=step){
+      for(let b=Math.floor(firstB*sub)/sub; b<=lastB; b+=1/sub){
         const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
       }
     }
-    ctx.strokeStyle='rgba(40,82,76,0.16)'; ctx.lineWidth=1;            // unit lines — one per 1/sigDen note
     for(let b=Math.max(0,firstB); b<=Math.min(tb,lastB); b++){
-      if(Math.abs(b/bpb-Math.round(b/bpb))<1e-6) continue;             // bar lines drawn below (bpb may be fractional)
-      const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
-    }
-    ctx.strokeStyle='rgba(17,137,126,0.40)'; ctx.lineWidth=1.4;        // bar lines at k·bpb — fractional numerators welcome
-    for(let k=Math.max(0,Math.floor(firstB/bpb)); k*bpb<=Math.min(tb,lastB)+1e-9; k++){
-      const x=beatToX(k*bpb); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+      const x=beatToX(b); const bar=(b%bpb===0);
+      ctx.strokeStyle = bar?'rgba(17,137,126,0.40)':'rgba(40,82,76,0.16)';
+      ctx.lineWidth = bar?1.4:1;
+      ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
     }
   } else {
-    const spb=1/unitsPerSec(mainSystem()); const totalSec=tb*spb;
+    const spb=60/settings.bpm; const totalSec=tb*spb;
     const firstS=Math.floor(xToBeat(GUT_L)*spb), lastS=Math.ceil(xToBeat(W)*spb);
     // choose nice second-grid
     let step=1; const pxPerSec=view.pxPerBeat/spb;
@@ -1261,14 +1239,11 @@ function drawAllGrids(W,H){
       ctx.strokeStyle='rgba(17,137,126,0.30)'; ctx.lineWidth=1;
       for(let s=0;s<=len+1e-6;s+=step){ const x=secToX(s0+s); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
     } else {
-      const sig=m.sigNum||4; const runits=(m.bars||settings.bars)*sig; const step=gridStepUnits(m);
-      if(step<0.999 && pxPerBeatIn(r)*step>=6){ ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
-        for(let b=0;b<=runits+1e-6;b+=step){ const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); } }
-      ctx.strokeStyle='rgba(40,82,76,0.16)'; ctx.lineWidth=1;          // unit lines — one per 1/sigDen note
-      for(let b=0;b<=runits+1e-6;b++){ if(Math.abs(b/sig-Math.round(b/sig))<1e-6) continue;
-        const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
-      ctx.strokeStyle='rgba(17,137,126,0.40)'; ctx.lineWidth=1.4;      // bar lines at k·sig (sig may be fractional)
-      for(let k=0;k*sig<=runits+1e-6;k++){ const x=beatToX(k*sig);
+      const sig=m.sigNum||4; const rbeats=(m.bars||settings.bars)*sig; const sub=settings.grid||4;
+      if(view.pxPerBeat/sub>=6){ ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
+        for(let b=0;b<=rbeats+1e-6;b+=1/sub){ const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); } }
+      for(let b=0;b<=rbeats+1e-6;b++){ const x=beatToX(b); const bar=(b%sig===0);
+        ctx.strokeStyle = bar?'rgba(17,137,126,0.40)':'rgba(40,82,76,0.16)'; ctx.lineWidth=bar?1.4:1;
         ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
     }
     ctx.restore();
@@ -1445,11 +1420,11 @@ function drawGutters(W,H){
   const bpb=settings.sigNum, tb=totalBeats();
   if(view.timeRegime==='meter'){
     const firstB=Math.floor(xToBeat(GUT_L)), lastB=Math.ceil(xToBeat(W));
-    for(let k=Math.max(0,Math.floor(firstB/bpb)); k*bpb<=Math.min(tb,lastB)+1e-9; k++){
-      const x=beatToX(k*bpb); ctx.fillStyle=col('--ink'); ctx.fillText((k+1)+'',x+3,GUT_T/2);
+    for(let b=Math.max(0,firstB-firstB%bpb); b<=Math.min(tb,lastB); b+=bpb){
+      const x=beatToX(b); ctx.fillStyle=col('--ink'); ctx.fillText((b/bpb+1)+'',x+3,GUT_T/2);
     }
   } else {
-    const spb=1/unitsPerSec(mainSystem()), totalSec=tb*spb;
+    const spb=60/settings.bpm, totalSec=tb*spb;
     const pxPerSec=view.pxPerBeat/spb; let step=1; if(pxPerSec<46) step=Math.pow(10,Math.ceil(Math.log10(46/pxPerSec)));
     const firstS=Math.floor(xToBeat(GUT_L)*spb), lastS=Math.ceil(xToBeat(W)*spb);
     for(let s=Math.max(0,Math.floor(firstS/step)*step); s<=Math.min(totalSec,lastS); s+=step){
@@ -1588,7 +1563,7 @@ cv.addEventListener('pointerdown',e=>{
       const lp=penRaw[penRaw.length-1];
       const lx=beatToX(penNote.start+penNote.pts[penNote.pts.length-1].t*penNote.dur), ly=hzToY(lp.hz);
       if(Math.hypot(p.x-lx,p.y-ly)<9){ finalizePen(); return; }
-      if(beat<=lp.beat) beat=lp.beat + gridStepUnits(mainSystem(regionById(penNote.region)));   // keep time monotonic
+      if(beat<=lp.beat) beat=lp.beat + 1/settings.grid;   // keep time monotonic
       beat=clampBeatIn(beat, penHome);
       penRaw.push({beat,hz}); rebuildPoints(penNote,penRaw); penNote.voice=autoVoice(penNote);
     }
@@ -1739,10 +1714,10 @@ cv.addEventListener('pointermove',e=>{
     const x=secToX(d.preview); ctx.save(); ctx.strokeStyle=col('--ember'); ctx.lineWidth=1.5; ctx.setLineDash([0.5,5]); ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(x,GUT_T); ctx.lineTo(x,cv.clientHeight); ctx.stroke(); ctx.restore(); return; }
 
-  if(d.mode==='newHoldLen'){ const b=xToBeatSnappedIn(p.x, regionById(d.note.region)); d.note.dur=Math.max(gridStepUnits(mainSystem(regionById(d.note.region))), b-d.baseStart || settings.defLen); if(d.note.dur<=0) d.note.dur=settings.defLen; d.note.voice=autoVoice(d.note); draw(); updateStatus(); return; }
+  if(d.mode==='newHoldLen'){ const b=xToBeatSnappedIn(p.x, regionById(d.note.region)); d.note.dur=Math.max(1/settings.grid, b-d.baseStart || settings.defLen); if(d.note.dur<=0) d.note.dur=settings.defLen; d.note.voice=autoVoice(d.note); draw(); updateStatus(); return; }
   if(d.mode==='newGlide'){
     const b=xToBeatSnappedIn(p.x, regionById(d.note.region)); const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
-    d.note.dur=Math.max(gridStepUnits(mainSystem(regionById(d.note.region))), Math.abs(b-d.baseStart)||settings.defLen);
+    d.note.dur=Math.max(1/settings.grid, Math.abs(b-d.baseStart)||settings.defLen);
     if(b<d.baseStart){ d.note.start=b; d.note.pts=[{t:0,hz},{t:1,hz:d.startHz}]; }
     else { d.note.start=d.baseStart; d.note.pts=[{t:0,hz:d.startHz},{t:1,hz}]; }
     d.note.voice=autoVoice(d.note); draw(); updateStatus(); return;
@@ -1756,7 +1731,7 @@ cv.addEventListener('pointermove',e=>{
     const rawDm=-(p.y-d.sy)/view.pxPerSemi;
     const upsA=upsOf(activeRegion());
     const rawDbA=(p.x-d.sx)/view.pxPerSec*upsA;                                   // delta in ACTIVE units, for rigid grid-snapping
-    let dSec=(settings.snapTime ? (function(){const st=gridStepUnits(mainSystem());return Math.round(rawDbA/st)*st;})() : rawDbA)/upsA;   // one seconds delta moves the whole group rigidly
+    let dSec=(settings.snapTime ? Math.round(rawDbA*settings.grid)/settings.grid : rawDbA)/upsA;   // one seconds delta moves the whole group rigidly
     let loS=-Infinity, hiS=Infinity;
     for(const [n,t] of d.targets){ const home=regionById(n.region), u=upsOf(home), s0=regionStartSec(home);
       const abs=t.abs, sel=t.sel, last=abs.length-1, minStepS=(1/Math.max(settings.grid,8))/u;
@@ -1815,14 +1790,14 @@ cv.addEventListener('pointermove',e=>{
   if(d.mode==='resize'){
     const n=d.note, home=regionById(n.region);
     if(n.type==='hold'){
-      if(d.ep==='end'){ const b=xToBeatSnappedIn(p.x,home); n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); }
-      else { const b=xToBeatSnappedIn(p.x,home); const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; }
+      if(d.ep==='end'){ const b=xToBeatSnappedIn(p.x,home); n.dur=Math.max(1/settings.grid,b-n.start); }
+      else { const b=xToBeatSnappedIn(p.x,home); const end=d.o.start+d.o.dur; n.start=Math.min(b,end-1/settings.grid); n.dur=end-n.start; }
     } else {
       const idx=d.ptIdx, last=n.pts.length-1;
       const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
       const b=xToBeatSnappedIn(p.x,home);
-      if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; n.pts[0]={...n.pts[0],hz}; }
-      else if(idx===last){ n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); n.pts[last]={...n.pts[last],hz}; }
+      if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-1/settings.grid); n.dur=end-n.start; n.pts[0]={...n.pts[0],hz}; }
+      else if(idx===last){ n.dur=Math.max(1/settings.grid,b-n.start); n.pts[last]={...n.pts[last],hz}; }
       else { // interior point — move in (t,hz) between its neighbors, note extent unchanged
         let nt=(b-n.start)/Math.max(1e-6,n.dur);
         nt=Math.max(n.pts[idx-1].t+1e-4, Math.min(n.pts[idx+1].t-1e-4, nt));
@@ -2111,17 +2086,7 @@ function populateCycleSelect(){
 function setActiveCycle(id){ if(!CYCLES[id]) return;
   const c=CYCLES[id];
   if(c.kind==='grammar' && !c.grammar){ try{ c.grammar=parseCyc2(c.src); }catch(e){ flash('grammar error: '+e.message); return; } }
-  activeCycleId=id; activeCycle=c; cycleSel.value=id;
-  // span hint: a host-calibration suggestion (from "! sig:" or a builtin) — the .cyc itself stays span-agnostic
-  const m=mainSystem();
-  if(c.sigHint && m.kind!=='chronological' && (Math.abs((m.sigNum||4)-c.sigHint.num)>1e-9 || Math.abs((m.sigDen||4)-c.sigHint.den)>1e-9)){
-    pushHistory();
-    sigNum.value=c.sigHint.num; sigDen.value=c.sigHint.den;
-    relabelActiveRegion(mm=>{ mm.sigNum=c.sigHint.num; mm.sigDen=c.sigHint.den; });
-    flash('cycle suggests '+c.sigHint.num+'/'+c.sigHint.den+' \u2014 span applied (notes frozen in seconds)');
-  }
-  if(c.depthHint) cycDepth.value=Math.max(1,Math.min(7,c.depthHint));
-  refreshSigUI(); regimePill(); changed();
+  activeCycleId=id; activeCycle=c; cycleSel.value=id; regimePill(); changed();
 }
 cycleSel.addEventListener('change',async()=>{
   const v=cycleSel.value;
@@ -2146,21 +2111,10 @@ cycFile.onchange=async()=>{
   flash(`loaded ${files.length} .cyc file${files.length!==1?'s':''}`);
 };
 /* A .cyc is FLAT (description, count, onset list) or a GRAMMAR (any line starting with @).
-   parseCyc auto-detects and returns the matching cycle object.
-   "!" lines stay comments to every parser; two are read as optional HOST HINTS:
-     ! sig: 7/8        — suggested span calibration (the .cyc cannot know its own duration, by axiom)
-     ! beat_depth: 2   — suggested subdivision depth */
-function cycHints(text){
-  const h={};
-  for(const raw of text.split(/\r?\n/)){ const l=raw.trim(); if(!l.startsWith('!')) continue;
-    let m=l.match(/^!\s*sig\s*:\s*([\d.]+)\s*\/\s*([\d.]+)/i); if(m && +m[1]>0 && +m[2]>0){ h.sigHint={num:+m[1],den:+m[2]}; continue; }
-    m=l.match(/^!\s*beat_depth\s*:\s*(\d+)/i); if(m){ h.depthHint=+m[1]; }
-  }
-  return h;
-}
+   parseCyc auto-detects and returns the matching cycle object. */
 function parseCyc(text){
   const isGrammar = text.split(/\r?\n/).some(l=>{ const t=l.trim(); return t && !t.startsWith('!') && t[0]==='@'; });
-  if(isGrammar){ const g=parseCyc2(text); return Object.assign({ name:(g.description&&g.description.length?g.description:null), kind:'grammar', grammar:g, src:text }, cycHints(text)); }
+  if(isGrammar){ const g=parseCyc2(text); return { name:(g.description&&g.description.length?g.description:null), kind:'grammar', grammar:g, src:text }; }
   const lines=text.split(/\r?\n/); let state='desc', desc=null, count=null; const data=[];
   for(const raw of lines){ const line=raw.trim();
     if(line.startsWith('!')) continue;
@@ -2177,7 +2131,7 @@ function parseCyc(text){
   const period=data[data.length-1]||1;                 // last entry closes the cycle
   const onsets=[0].concat(data.slice(0,-1));            // implicit downbeat + listed onsets
   const phasesNorm=onsets.map(p=>p/period);             // normalize to [0,1)
-  return Object.assign({ name:(desc&&desc.length?desc:null), phasesNorm, period }, cycHints(text));
+  return { name:(desc&&desc.length?desc:null), phasesNorm, period };
 }
 /* ---- recursive subdivision grammar (the time-domain analog of recursion in tunings) ----
    Rule:  @name: SPEC > CONT   — SPEC = int N (even) | weights | measured points;
@@ -2255,7 +2209,7 @@ async function doPaste(){
 }
 function doDuplicate(){ const sel=selectedNotes(); if(!sel.length) return;
   const span=Math.max(...sel.map(n=>n.start+n.dur))-Math.min(...sel.map(n=>n.start));
-  const off=Math.max(span, gridStepUnits(mainSystem())); pushHistory(); selection.clear(); ptSel=new Map();
+  const off=Math.max(span, 1/settings.grid); pushHistory(); selection.clear(); ptSel=new Map();
   for(const s of sel){ const n=deepNote(s); n.id=NID++; n.region=s.region; n.start=clampBeatIn(s.start+off, regionById(s.region)); deriveHang(n); notes.push(n); selection.add(n.id); }
   changed(); flash('duplicated');
 }
@@ -2280,66 +2234,25 @@ function fitContent(){
   clampScroll(); draw();
 }
 
-/* ---- the sig is a cycla front-end ----------------------------------------------------
-   The spinners ghost-write the flat grammar regular notation hand-waves: 5/8 IS
-   "@root: 5 > bin" over a bar spanning 2.5 quarter-durations. Cycla owns the bar's
-   internal division; the sig / =♩ field is the HOST CALIBRATION (one cycle = how much
-   clock) that a .cyc, by axiom, refuses to encode. When a non-even cycle is active the
-   numerator locks (the cycle owns the division count); span and unit stay live. */
-function sigToCyc(){
-  let n=settings.sigNum, d=settings.sigDen, pn=n, pd=d;
-  for(let i=0;i<6 && Math.abs(pn-Math.round(pn))>1e-9;i++){ pn*=2; pd*=2; }   // 2.5/4 writes as 5/8
-  pn=Math.round(pn);
-  const head=n+'/'+d+' — generated by Tabota Roll'+(pd!==d?(' (written as '+pn+'/'+pd+')'):'');
-  const body= pn>=2 ? '@root: '+pn+' > bin\n@bin: 2 > bin' : '@root: 2 > bin\n@bin: 2 > bin';
-  return head+'\n! sig: '+pn+'/'+pd+'\n'+body;
-}
-function refreshSigUI(){
-  sigSpan.value=+( (settings.sigNum*4/settings.sigDen).toFixed(4) );
-  const locked = !!(activeCycle && !activeCycle.isEven);
-  sigNum.disabled = locked;
-  sigNum.title = locked
-    ? 'the active cycle defines the bar\u2019s division \u2014 calibrate its span with =\u2669 or the unit'
-    : 'beats per bar (fractional welcome \u2014 5/8 \u2261 2.5/4)';
-  sigGhost.title = locked
-    ? 'the active cycle\u2019s grammar \u2014 click to copy as .cyc\n\n'+(activeCycle.src||'(flat onset cycle \u2014 no grammar)')
-    : 'this signature, ghost-written as cycla \u2014 click to copy as .cyc\n\n'+sigToCyc();
-}
-sigGhost.onclick=()=>{
-  const txt=(activeCycle && !activeCycle.isEven) ? (activeCycle.src||'') : sigToCyc();
-  if(!txt){ flash('flat onset cycle \u2014 nothing to ghost-write'); return; }
-  try{ navigator.clipboard && navigator.clipboard.writeText(txt); flash('copied .cyc \u2014 the sig, said out loud'); }
-  catch(e){ flash('clipboard unavailable'); }
-};
-sigSpan.addEventListener('change',()=>{
-  const q=Math.max(0.0625,+sigSpan.value||4);                       // span in ♩ — the general view
-  sigNum.value=+( (q*settings.sigDen/4).toFixed(4) );               // rewrite the numerator, keep the unit
-  sigNum.dispatchEvent(new Event('change'));                        // through the same relabel path (seconds conserved)
-});
-
 /* GOLDEN RULE: the extent (seconds) changes only explicitly — boundary drag or the bars input.
    bpm / sig edits are RELABELINGS: the span stays put, bars remap onto it, notes freeze in seconds. */
 function relabelActiveRegion(fn){
   const r=activeRegion(), m=mainSystem(r);
   const secLen=regionSecLen(r), rs=regionStartSec(r);
-  const spb=1/unitsPerSec(m);
+  const spb=m.kind==='chronological'?1:60/m.bpm;
   const abs=notes.filter(n=>n.region===r.id).map(n=>({n, sec:rs+n.start*spb, endSec:rs+(n.start+(n.dur||0))*spb}));
   const hangPre=new Map();
   for(const n of notes){ if(n.end&&n.end.region===r.id) hangPre.set(n, rs+n.end.beat*spb); }
   fn(m);                                                       // apply the edit (new bpm / sig / kind from controls)
-  m.bars = secLen/regUnitSec(m);   // extent conserved: units remap onto it
-  const ups2=unitsPerSec(m);
+  m.bars = (m.kind==='chronological') ? secLen : secLen/((m.sigNum||4)*60/m.bpm);   // extent conserved: units remap onto it
+  const ups2=m.kind==='chronological'?1:m.bpm/60;
   for(const {n,sec,endSec} of abs){ n.start=(sec-rs)*ups2; n.dur=Math.max(1e-4,(endSec-sec)*ups2); }  // notes frozen in time
   for(const [n,endSec] of hangPre){ n.end.beat=(endSec-rs)*ups2; }                                     // hangs frozen in time too
   applyRegionToControls(r);
 }
 [bpm,sigNum,sigDen].forEach(el=>el.addEventListener('change',()=>{
-  if(el===sigDen && sigNum.disabled){                        // numerator locked by a cycle: the unit re-coins, the SPAN holds
-    const q=quartersPerBar(mainSystem());
-    sigNum.value=+( (q*(+sigDen.value||4)/4).toFixed(4) );
-  }
   relabelActiveRegion(m=>{ m.bpm=+bpm.value||120; m.sigNum=+sigNum.value||4; m.sigDen=+sigDen.value||4; });
-  refreshSigUI(); changed(); clampScroll(); draw();
+  changed(); clampScroll(); draw();
 }));
 [a4,bars].forEach(el=>el.addEventListener('change',()=>{syncRegionFromControls();changed();clampScroll();draw();}));   // bars = the explicit extent edit
 
@@ -2671,9 +2584,6 @@ impFile.onchange=async()=>{
   catch(err){ alert('Could not parse MIDI: '+err.message); return; }
   pushHistory();
   notes=imp.notes; clearGran();
-  { const m0=mainSystem();                                  // importer speaks quarters; re-coin into the active chart's units
-    const uq = m0.kind==='chronological' ? 60/(imp.bpm||120) : (m0.sigDen||4)/4;
-    if(Math.abs(uq-1)>1e-9) for(const n of notes){ n.start*=uq; n.dur*=uq; } }
   if(imp.bpm) bpm.value=Math.round(imp.bpm);
   NID=Math.max(NID,0,...notes.map(n=>n.id))+1;
   // expand bars to fit
@@ -2690,17 +2600,15 @@ impFile.onchange=async()=>{
    same seconds-only grid the Roll shows). Absolute seconds <-> quarters is piecewise
    linear, so notes and bend curves keep the score's honest timing even though MIDI
    must think in beats. The .mid stays a shadow; the timeline is the translation. */
-function nearestPow2Den(d){ return Math.pow(2,Math.max(0,Math.min(6,Math.round(Math.log2(Math.max(0.5,+d||4)))))); }   // MIDI's sig vocabulary — the .jpeg approximates
 function exportTimeline(){
   ensureRegions();
   const segs=[]; let q=0, s=0;
-  for(const r of regions){ const m=mainSystem(r), len=regionSecLen(r);
-    const qps = m.kind==='chronological'?1:(m.bpm||120)/60;            // MIDI ticks think in QUARTERS, whatever the region's unit
-    segs.push({q, s, ups:qps,
+  for(const r of regions){ const m=mainSystem(r), len=regionSecLen(r), ups=upsOf(r);
+    segs.push({q, s, ups,
       bpm: m.kind==='chronological'?60:(m.bpm||120),
-      sigNum: m.kind==='chronological'?1:Math.max(1,Math.round(m.sigNum||4)),
-      sigDen: m.kind==='chronological'?4:nearestPow2Den(m.sigDen)});
-    q+=len*qps; s+=len;
+      sigNum: m.kind==='chronological'?1:(m.sigNum||4),
+      sigDen: m.kind==='chronological'?4:(m.sigDen||4)});
+    q+=len*ups; s+=len;
   }
   return segs;
 }
@@ -2724,7 +2632,7 @@ document.getElementById('expMidi').onclick=()=>{
   flash(`exported ${count} notes · ${voices} voice${voices!==1?'s':''} (${chs})`+(warnings.length?` · ${warnings.length} hard-walled`:''));
 };
 function exportOpts(){ return {
-  ppq:+ppq.value||480, bpm:settings.bpm, sigNum:Math.max(1,Math.round(settings.sigNum)), sigDen:nearestPow2Den(settings.sigDen),
+  ppq:+ppq.value||480, bpm:settings.bpm, sigNum:settings.sigNum, sigDen:settings.sigDen,
   a4:settings.a4, range:settings.range, baseChannel:(+channel.value||1)-1, program:+program.value||0, vel:+vel.value||96, bendSteps:24
 };}
 
@@ -2813,7 +2721,7 @@ function _notesFromV1(doc){
   const tr=doc.temporalRegime||'metered';
   const axis=doc.axisMode||'frequency';
   const sig=rs.timeSignature||[settings.sigNum,settings.sigDen];
-  const toBeats=(t)=> tr==='chronological' ? (t*bpm/60)*((sig[1]||4)/4) : (+t||0);   // metered: already units of the declared sig
+  const toBeats=(t)=> tr==='chronological' ? (t*bpm/60) : (+t||0);   // metered: already beats
   const evs=doc.events||[]; const out=[]; let seqBeat=0, skipped=0;
   for(const e of evs){
     if(!e || (e.type && e.type!=='line' && e.type!=='point')){ skipped++; continue; }
@@ -2874,7 +2782,7 @@ function _notesFromV2(doc){
     if(e.events) scan(e.events);
   }); })(doc.score);
   const masterBpm=mBpm||settings.bpm, sigNum_=mNum||settings.sigNum, sigDen_=mDen||settings.sigDen, masterA4=mA4||settings.a4;
-  const SPB = (masterBpm/60)*((sigDen_||4)/4);      // seconds -> UNITS (1/sigDen notes) of the Roll's single frame
+  const SPB = masterBpm/60;                         // seconds -> beats of the Roll's single tempo
 
   const out=[]; let skipped=0;
   for(const n of R.nodes){
@@ -2955,7 +2863,7 @@ function seed(){
   REGID=1;
   const A={id:newRegionId(), name:'Intro', main:'m', systems:[{id:'m',kind:'metered',     bpm:120,sigNum:4,sigDen:4,a4:a,bars:2,offset:0,axis:'frequency'}]};   // 4 bars, cut to 2 (measures 3-4 removed)
   const B={id:newRegionId(), name:'Free',  main:'m', systems:[{id:'m',kind:'chronological',bpm:120,sigNum:4,sigDen:4,a4:a,bars:4,offset:0,axis:'frequency'}]};
-  const C={id:newRegionId(), name:'Coda',  main:'m', systems:[{id:'m',kind:'metered',     bpm:90, sigNum:5,sigDen:8,a4:a,bars:2.3,offset:0,axis:'frequency'}]};   // 5/8 — units are eighths, the bar spans 2.5♩; 2.3 measures, extents needn't be whole
+  const C={id:newRegionId(), name:'Coda',  main:'m', systems:[{id:'m',kind:'metered',     bpm:90, sigNum:3,sigDen:4,a4:a,bars:2.3,offset:0,axis:'frequency'}]};   // 2.3 measures — extents needn't be whole
   regions=[A,B,C]; activeRegionId=A.id;
   PRID=1;
   pitchRegions=[                                        // tuning charts decouple from time regions:
@@ -2980,12 +2888,12 @@ function seed(){
     {id:NID++,region:B.id,start:1.6,dur:0.6,type:'hold', vel:90, voice:1,pts:[{t:0,hz:semis(9)}]},                            // 5.6s abs — still 12-TET ground
     {id:NID++,region:B.id,start:2.6,dur:1.4,type:'glide',curve:'exp',vel:90, voice:1,pts:[{t:0,hz:ji(9/8)},{t:1,hz:ji(2*9/8)}]},   // 6.6s abs — past the tuning seam, so it speaks in ratios
     // SHOWCASE: one line crossing BOTH kinds of chart — onset at 4.8s on the 12-TET
-    // grid (equal fifth, 700¢), end hung on Coda's chart at eighth 3 (9s abs), landing
+    // grid (equal fifth, 700¢), end hung on Coda's chart at beat 3 (10s abs), landing
     // on the just major third (5/4, 386¢) of the JI grid that takes over at 6s
     {id:NID++,region:B.id,start:0.8,dur:5.2,type:'glide',curve:'smooth',vel:95,voice:2,
      end:{region:C.id,beat:3},pts:[{t:0,hz:semis(7)},{t:1,hz:ji(2*5/4)}]},
-    // C — metered 5/8 @♩=90 (eighths tick at 180/min), entirely on the JI chart: an
-    // A-major arpeggio in whole-number ratios (the third sits −13.7¢ from its equal neighbour)
+    // C — metered 3/4 @90 (a slower waltz close), entirely on the JI chart: an A-major
+    // arpeggio in whole-number ratios (the third sits −13.7¢ from its equal neighbour)
     {id:NID++,region:C.id,start:0,dur:1,type:'hold',vel:100,voice:1,pts:[{t:0,hz:ji(2)}]},
     {id:NID++,region:C.id,start:1,dur:1,type:'hold',vel:90, voice:1,pts:[{t:0,hz:ji(2*5/4)}]},
     {id:NID++,region:C.id,start:2,dur:1,type:'hold',vel:90, voice:1,pts:[{t:0,hz:ji(2*3/2)}]},
