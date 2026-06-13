@@ -165,16 +165,17 @@ table.report tr:hover td{background:rgba(24,48,43,0.04);}
 </div>
 
 <p class="lede">
-  <b>Tabota田</b> is an event description language and musical toolset for composing relations across time, pitch, meter, tuning, gesture, and instruction. Rather than treating time as one fixed grid, Tabota lets events locate, constrain, and measure one another.
+  <b>Tabota田</b> is an event description language and musical toolset for composing relations across time, pitch, meter, tuning, gesture, and instruction. Tabota eschews time as the primary organizing coordinate system for events and lets events locate, constrain, and measure one another.
 </p>
 
 <p class="lede">
   At the center is the <b>Tabota language</b>: a JSON format where every part of a score is one recursive <b>Event</b>. A note, cue, region, movement, meter, tuning field, or whole score can be described by stacking facets such as <span class="fct">frame</span>, <span class="fct">value</span>, <span class="fct">position</span>, <span class="fct">extent</span>, and nested <span class="fct">events</span>. Any Event can also become a coordinate field for other Events, while carrying its own characteristics: pitch, text, volume, instruction, or other attached data.
 </p>
 
-<p class="lede">
-  <a href="tabota_roll.html">TaboTa Roll</a> is the interactive editor and realizer for the determinate fragment of the language: the parts that can be drawn, edited, played back, and exported to MIDI. It keeps regions, tempos, tunings, glides, and hybrid time relationships visible as editable musical material, enabling compositions that switch tempo systems or tuning systems inside the piece, as well as complex pitch bends that are difficult to author in most native MIDI editors.
+<p class="lede"> 
+  <a href="tabota_roll.html">TaboTa Roll</a> is an interactive graphic editor built on the Tabota language, made for MIDI compositions that are difficult to author in most native MIDI editors. It supports pieces that switch tempo systems or tuning systems from within the composition, as well as complex pitch bends and glides across voices. TaboTa Roll can export both multi-voice MIDI and Tabota score files.
 </p>
+
 
 <p class="lede">
   <a href="cycla_builder.html">Cycla</a> is the companion builder for subdivision grammars: a temporal counterpart to Scala, made for custom subdivisions of time that can be imported into TaboTa Roll. It helps encode pulse systems, asymmetrical meters, and non-Western temporal structures that sit uneasily inside isometric notation.
