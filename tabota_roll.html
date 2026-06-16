@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tabota Roll — polytemporal multi-tuning score editor</title>
+<title>Tabota Roll</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -207,20 +207,101 @@ footer code{font-family:var(--mono); color:var(--ink)}
 }
 .tbtn:hover:not(:disabled){ background:#fff; border-color:var(--tide); color:var(--ink); }
 .tbtn:disabled{ opacity:.4; cursor:default; }
+#tempoEdit{ flex:1 1 auto; min-width:0; display:none; align-items:center; gap:5px;
+  font-size:10.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; }
+#tempoEdit .te-lab{ color:var(--tide); font-weight:600; flex:0 0 auto; }
+#tempoEdit .te-arrow{ color:var(--ink-faint); flex:0 0 auto; }
+#tempoEdit > span{ flex:0 0 auto; display:inline-flex; align-items:center; gap:4px; }
+.te-sel,.te-num{ font-family:var(--mono); font-size:10.5px; color:var(--ink);
+  background:#fff8; border:1px solid var(--edge); border-radius:4px; padding:1px 3px; line-height:1.4; }
+.te-sel:hover,.te-num:hover{ border-color:var(--tide); }
+.te-num{ width:50px; text-align:right; }
+.te-sel:focus,.te-num:focus{ outline:none; border-color:var(--tide); }
 #tempo{
   display:block; width:100%; height:var(--tempoH);
   cursor:crosshair; touch-action:none; background:transparent;
+}
+/* make the tempo BPM number field sit inside the 19px tempo bar */
+#teBpm.te-num{
+  height:17px;
+  min-height:0;
+  line-height:15px;
+  padding:0 3px;
+  margin:0;
+  vertical-align:middle;
+}
+
+/* Firefox: prevent number input chrome from adding extra height */
+#teBpm{
+  appearance:textfield;
+  -moz-appearance:textfield;
+}
+
+/* Chromium/Safari: keep steppers compact instead of inflating the bar */
+#teBpm::-webkit-inner-spin-button,
+#teBpm::-webkit-outer-spin-button{
+  margin:0;
+  height:15px;
 }
 #tempoPanel.tcollapsed #tempo{ display:none; }
 ::-webkit-scrollbar{width:11px;height:11px}
 ::-webkit-scrollbar-thumb{background:var(--edge); border-radius:6px; border:2px solid var(--panel)}
 ::-webkit-scrollbar-track{background:transparent}
+
+input[type=number], select, input[type=text]{
+  transition:border-color .12s, background .12s, box-shadow .12s;
+}
+
+input[type=number]:hover,
+select:hover,
+input[type=text]:hover{
+  border-color:var(--tide);
+  background:#fff;
+}
+
+input[type=number]:focus,
+select:focus,
+input[type=text]:focus{
+  outline:none;
+  border-color:var(--tide);
+  box-shadow:0 0 0 2px #11897e22;
+}
+
+input[type=number]:disabled,
+input[type=text]:disabled,
+select:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+/* native ^ v number steppers — Chromium/Safari */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{
+  opacity:.72;
+  cursor:ns-resize;
+  filter:saturate(1.25) hue-rotate(120deg);
+}
+
+input[type=number]:hover::-webkit-inner-spin-button,
+input[type=number]:hover::-webkit-outer-spin-button{
+  opacity:1;
+}
+
+/* dropdown caret polish */
+select{
+  cursor:pointer;
+}
+
+select:disabled{
+  cursor:not-allowed;
+}
+
 </style>
 </head>
 <body>
 <header>
   <div class="brand">Tabota <em>Roll</em></div>
-  <div class="sub">polytemporal multi-tuning score editor · charts, regions, hybrid notes, MIDI realization</div>
+  <div class="sub">polytemporal multi-tuning graphical score editor</div>
   <div class="spacer"></div>
   <div class="pill" title="MIDI translation only — how far one channel's pitch-bend may reach. Tabota's curves and slides are unconstrained; this sets what the .mid shadow can carry before hard-walling.">bend ± <input type="number" id="bendRange" value="2" min="1" max="48" step="1"> st</div>
   <div class="pill" id="pillRegime">meter · scale</div>
@@ -375,6 +456,12 @@ footer code{font-family:var(--mono); color:var(--ink)}
       <span id="tempoGrip" title="drag to resize"></span>
       <button id="tempoToggle" title="show / hide the tempo track">田 tempo</button>
       <span id="tempoReadout"></span>
+      <span id="tempoEdit">
+        <span class="te-lab" id="teLabel">point</span>
+        <span id="teBeforeWrap"><span class="te-arrow">·&nbsp;←</span><select id="teBefore" class="te-sel" title="shape of the line entering this point (set by the previous point)"></select></span>
+        <span id="teBpmWrap"><span class="te-arrow">·</span>♩=<input id="teBpm" class="te-num" type="number" min="20" max="400" step="1" title="tempo at the selected point(s)"></span>
+        <span id="teAfterWrap"><span class="te-arrow">·</span><select id="teAfter" class="te-sel" title="shape of the line leaving this point"></select><span class="te-arrow" id="teAfterArrow">→</span></span>
+      </span>
       <span class="tspacer"></span>
       <button id="tempoAffectBtn" class="tbtn" title="when a deposited point splits a line, which side adopts the new shape — ⊘ neither · ▸ after · ◂ before · ◂▸ both">⊘ keep</button>
       <button id="tempoCurveBtn" class="tbtn" title="segment shape — ╱ linear (ramp) / ⌒ exp (curved). with a point selected, sets its outgoing shape; otherwise the shape new points deposit with">╱ linear</button>
@@ -1116,26 +1203,27 @@ function effTempo(m){
   const Q=Q_OF(m); for(const p of ps) p.at=Math.max(0,Math.min(Q,p.at));   // clamp the COPY, not stored data
   return ps;
 }
-// bpm at f quarters into a segment a→c, by the segment's shape (a.curve governs)
-function _bpmAt(a,c,dq,f){ if(Math.abs(c.bpm-a.bpm)<1e-9) return a.bpm;
-  if(a.curve==='linear') return a.bpm+(c.bpm-a.bpm)*f/dq;
-  if(a.curve==='exp')    return a.bpm*Math.pow(c.bpm/a.bpm, f/dq);     // geometric ramp
-  return a.bpm; }                                                       // flat / legacy hold
+// tempo segments share the note glides' shape vocabulary (shapeK): linear / exp / log / smooth.
+// linear keeps an exact closed form; the rest integrate ∫60/bpm numerically (general, handles "etc.").
+const TEMPO_CURVES=['linear','exp','log','smooth'];
+function _isHold(c){ return !TEMPO_CURVES.includes(c); }                    // legacy 'square' / unknown → flat hold
+function _bpmAt(a,c,dq,f){ if(_isHold(a.curve)||Math.abs(c.bpm-a.bpm)<1e-9) return a.bpm;
+  return a.bpm+(c.bpm-a.bpm)*shapeK(f/dq, a.curve); }                       // value interpolates by the shape
+function _invBpmInt(u0,u1,b0,b1,curve){ const N=32,h=(u1-u0)/N;             // ∫_{u0}^{u1} du/bpm(u) — Simpson
+  const f=(u)=>1/(b0+(b1-b0)*shapeK(u,curve)); let s=f(u0)+f(u1);
+  for(let i=1;i<N;i++) s+=(i%2?4:2)*f(u0+i*h); return s*h/3; }
 function _segSec(dq,b0,b1,curve){ if(dq<=0)return 0;
-  if(Math.abs(b1-b0)<1e-9) return 60*dq/b0;                                                  // flat
-  if(curve==='exp')    return 60*dq*(1/b0-1/b1)/Math.log(b1/b0);                              // ∫60/bpm, bpm geometric
-  if(curve==='linear') return 60*dq*Math.log(b1/b0)/(b1-b0);                                  // ∫60/bpm, bpm linear
-  return 60*dq/b0; }                                                                          // legacy hold
+  if(_isHold(curve)||Math.abs(b1-b0)<1e-9) return 60*dq/b0;                                    // flat / hold
+  if(curve==='linear') return 60*dq*Math.log(b1/b0)/(b1-b0);                                   // exact
+  return 60*dq*_invBpmInt(0,1,b0,b1,curve); }                                                  // numeric ∫60/bpm
 function _segSecPart(f,dq,b0,b1,curve){ if(f<=0)return 0;
-  if(Math.abs(b1-b0)<1e-9) return 60*f/b0;
-  if(curve==='exp'){ const bf=b0*Math.pow(b1/b0, f/dq); return 60*dq*(1/b0-1/bf)/Math.log(b1/b0); }
+  if(_isHold(curve)||Math.abs(b1-b0)<1e-9) return 60*f/b0;
   if(curve==='linear'){ const bf=b0+(b1-b0)*(f/dq); return 60*f*Math.log(bf/b0)/(bf-b0); }
-  return 60*f/b0; }
+  return 60*dq*_invBpmInt(0,f/dq,b0,b1,curve); }
 function _segQAt(ds,dq,b0,b1,curve){ if(ds<=0)return 0;
-  if(Math.abs(b1-b0)<1e-9) return ds*b0/60;
-  if(curve==='exp'){ const L=Math.log(b1/b0); const bf=1/(1/b0 - ds*L/(60*dq)); return dq*Math.log(bf/b0)/L; }  // inverse of exp part
-  if(curve==='linear'){ const k=(b1-b0)/dq; return (b0/k)*(Math.exp(k*ds/60)-1); }                              // inverse of the linear ramp
-  return ds*b0/60; }
+  if(_isHold(curve)||Math.abs(b1-b0)<1e-9) return ds*b0/60;
+  if(curve==='linear'){ const k=(b1-b0)/dq; return (b0/k)*(Math.exp(k*ds/60)-1); }
+  let lo=0,hi=dq; for(let it=0;it<28;it++){ const m=(lo+hi)/2; if(_segSecPart(m,dq,b0,b1,curve)<ds) lo=m; else hi=m; } return (lo+hi)/2; }
 let _tmap=null; function tempoMapDirty(){ _tmap=null; }
 /* ---- tempo communication ----------------------------------------------------
    A metered region with no tempo points of its own BORROWS a flat value from the
@@ -2914,6 +3002,13 @@ const tempoHead=document.getElementById('tempoHead'), tempoGrip=document.getElem
 const tempoToggle=document.getElementById('tempoToggle'), tempoReadout=document.getElementById('tempoReadout');
 const tempoCurveBtn=document.getElementById('tempoCurveBtn'), tempoDelBtn=document.getElementById('tempoDelBtn');
 const tempoAffectBtn=document.getElementById('tempoAffectBtn');
+const tempoEdit=document.getElementById('tempoEdit'), teLabel=document.getElementById('teLabel');
+const teBefore=document.getElementById('teBefore'), teAfter=document.getElementById('teAfter'), teBpm=document.getElementById('teBpm');
+const teBeforeWrap=document.getElementById('teBeforeWrap'), teBpmWrap=document.getElementById('teBpmWrap'), teAfterWrap=document.getElementById('teAfterWrap'), teAfterArrow=document.getElementById('teAfterArrow');
+const CURVE_OPTS=[['linear','linear'],['exp','exp · in'],['log','log · out'],['smooth','smooth · S']];
+function fillCurveSel(sel){ sel.innerHTML='<option value="">—</option>'+CURVE_OPTS.map(([v,t])=>`<option value="${v}">${t}</option>`).join(''); }
+fillCurveSel(teBefore); fillCurveSel(teAfter);
+let tempoSegSel=null;   // {a,b} when a SEGMENT (line) is grabbed — distinguishes it from a 2-point marquee
 let tempoOpen=false;                 // collapsed by default — it's an opt-in surface
 let tempoSel=new Set();              // Set of selected stored point refs (live refs into m.tempo)
 let tempoMarq=null;                  // {sx,sy,x2,y2,band} while sweeping a selection
@@ -3033,7 +3128,7 @@ function drawTempo(){
     if(g.chrono){ if(pen){ tctx.stroke(); pen=false; } continue; }
     const xa=secToX(g.sec0), ya=bpmToY(g.bpm0);
     if(!pen){ tctx.beginPath(); tctx.moveTo(xa,ya); pen=true; } else { tctx.lineTo(xa,ya); }
-    if(Math.abs(g.bpm1-g.bpm0)<1e-9 || (g.curve!=='linear'&&g.curve!=='exp')){ tctx.lineTo(secToX(g.sec1), bpmToY(g.bpm1)); }  // flat / jump connector
+    if(Math.abs(g.bpm1-g.bpm0)<1e-9 || _isHold(g.curve)){ tctx.lineTo(secToX(g.sec1), bpmToY(g.bpm1)); }  // flat / jump / hold connector
     else { const dq=g.q1-g.q0, N=18, a={bpm:g.bpm0,curve:g.curve}, c={bpm:g.bpm1};                                            // sample the curve's true shape
       for(let k=1;k<=N;k++){ const f=dq*k/N; tctx.lineTo(secToX(g.sec0+_segSecPart(f,dq,g.bpm0,g.bpm1,g.curve)), bpmToY(_bpmAt(a,c,dq,f))); } }
   }
@@ -3074,14 +3169,56 @@ let tempoHandles=[];
 function tempoTicks(lo,hi){ const span=hi-lo; let step= span<=40?10: span<=90?20: span<=180?40:60;
   const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi; v+=step) out.push(v); return out; }
 
-function shapeLabel(s){ return s==='exp'?'⌒ exp':'╱ linear'; }
-function updateTempoReadout(){
-  if(tempoSel.size>=1){ const pts=[...tempoSel];
-    if(pts.length===1){ const p=pts[0]; tempoReadout.textContent=`point · ♩=${Math.round(p.bpm)} @ q${(+p.at).toFixed(2)} · ${p.curve==='exp'?'exp':'linear'}`; }
-    else tempoReadout.textContent=`${pts.length} points · drag to move · ⌫ to delete`;
-    tempoDelBtn.disabled=false; tempoCurveBtn.disabled=false;
-    tempoCurveBtn.textContent=shapeLabel(pts.every(p=>p.curve==='exp')?'exp':'linear');   // toggles the selected points' outgoing shape
+function shapeLabel(s){ return ({linear:'╱ linear',exp:'⌒ exp',log:'⌐ log',smooth:'∫ smooth'})[s]||'╱ linear'; }
+// what the in-lane editor binds to, read off the current tempo selection
+function tempoEditMode(){
+  const pts=[...tempoSel];
+  if(pts.length===0) return {mode:'none'};
+  if(tempoSegSel && tempoSel.size===2 && tempoSel.has(tempoSegSel.a) && tempoSel.has(tempoSegSel.b))
+    return {mode:'segment', a:tempoSegSel.a};                                 // a line grab: edit the one segment's shape
+  if(pts.length===1){ const pt=pts[0], rr=tempoPointRegion(pt); let prev=null;
+    if(rr){ const arr=[...rr.m.tempo].sort((x,y)=>x.at-y.at); const i=arr.indexOf(pt); if(i>0) prev=arr[i-1]; }
+    return {mode:'point', pt, prev}; }                                        // prev governs the line BEFORE this point
+  return {mode:'points', pts};
+}
+const _uniform=(arr,f)=>{ const v=f(arr[0]); return arr.every(x=>f(x)===v)? v : null; };   // shared value, else null (mixed)
+function syncTempoEdit(em){
+  const setSel=(sel,v)=>{ if(document.activeElement!==sel) sel.value=(v==null?'':v); };     // '' → the "—" mixed row
+  const show=(el,on)=>{ el.style.display=on?'':'none'; };
+  if(em.mode==='none'){ tempoEdit.style.display='none'; tempoReadout.style.display=''; return; }
+  tempoReadout.style.display='none'; tempoEdit.style.display='inline-flex';
+  if(em.mode==='point'){
+    teLabel.textContent='point'; show(teBeforeWrap,!!em.prev); show(teBpmWrap,true); show(teAfterWrap,true); show(teAfterArrow,true);
+    if(em.prev) setSel(teBefore, em.prev.curve||'linear');
+    if(document.activeElement!==teBpm){ teBpm.value=String(Math.round(em.pt.bpm*10)/10); teBpm.placeholder=''; }
+    setSel(teAfter, em.pt.curve||'linear');
+  } else if(em.mode==='segment'){
+    teLabel.textContent='curve'; show(teBeforeWrap,false); show(teBpmWrap,false); show(teAfterWrap,true); show(teAfterArrow,false);
+    setSel(teAfter, em.a.curve||'linear');
   } else {
+    teLabel.textContent=em.pts.length+' points'; show(teBeforeWrap,false); show(teBpmWrap,true); show(teAfterWrap,true); show(teAfterArrow,false);
+    const ub=_uniform(em.pts,p=>Math.round(p.bpm*10)/10);
+    if(document.activeElement!==teBpm){ teBpm.value=(ub==null?'':String(ub)); teBpm.placeholder=(ub==null?'—':''); }
+    setSel(teAfter, _uniform(em.pts,p=>p.curve||'linear'));
+  }
+}
+teBpm.addEventListener('change',()=>{ const v=parseFloat(teBpm.value); const em=tempoEditMode();
+  const pts = em.mode==='point'?[em.pt] : (em.mode==='points'?em.pts:[]);
+  if(!(v>0)||!pts.length){ syncTempoEdit(em); return; }
+  pushHistory(); for(const p of pts) p.bpm=clampBpm(v); tempoMapDirty(); changed(); });
+teBefore.addEventListener('change',()=>{ const v=teBefore.value; const em=tempoEditMode();
+  if(v && em.mode==='point' && em.prev){ pushHistory(); em.prev.curve=v; tempoMapDirty(); changed(); } });
+teAfter.addEventListener('change',()=>{ const v=teAfter.value; if(!v) return; const em=tempoEditMode();
+  const pts = em.mode==='point'?[em.pt] : em.mode==='segment'?[em.a] : em.mode==='points'?em.pts : [];
+  if(!pts.length) return; pushHistory(); for(const p of pts) p.curve=v; tempoMapDirty(); changed(); });
+function updateTempoReadout(){
+  const em=tempoEditMode();
+  if(em.mode!=='none'){
+    syncTempoEdit(em);
+    tempoDelBtn.disabled=false;
+    tempoCurveBtn.style.display='none';        // the dropdowns own curve while a selection is live
+  } else {
+    tempoEdit.style.display='none'; tempoReadout.style.display='';
     const meters=regions.filter(r=>mainSystem(r).kind!=='chronological').length;
     if(!meters){ tempoReadout.textContent='no metered regions — free time has no tempo'; }
     else { const t=view.tool;
@@ -3090,12 +3227,12 @@ function updateTempoReadout(){
         t==='pen'   ? 'pen: click to place points along the line' :
         t==='free'  ? 'free: drag to draw a tempo contour' :
         t==='erase' ? 'erase: click a point to remove it' :
-        t==='select'? 'select: drag points · drag a line to move both · sweep to select' :
+        t==='select'? 'select: tap a point · grab a line · sweep to select' :
                       'hold: tap to place a tempo point'; }
     tempoDelBtn.disabled=true;
-    tempoCurveBtn.disabled=false; tempoCurveBtn.textContent=shapeLabel(tempoShape);   // sets the shape new points deposit with
+    tempoCurveBtn.style.display=''; tempoCurveBtn.disabled=false; tempoCurveBtn.textContent=shapeLabel(tempoShape);   // deposit shape
   }
-  if(typeof syncPointEditor==='function') syncPointEditor();   // ♩= entry tracks the tempo selection
+  if(typeof syncPointEditor==='function') syncPointEditor();   // toolbar ♩= mirror tracks the tempo selection
 }
 
 /* ---- interaction ---- */
@@ -3154,7 +3291,7 @@ tempoCv.addEventListener('pointerdown',e=>{
   if(!tempoOpen) return;
   const tool=view.tool; if(tool==='pan'||tool==='slice') return;          // those gestures live on the roll
   tempoCv.setPointerCapture(e.pointerId);
-  pointSel=null;   // touching the lane hands the ♩=/Hz editor to tempo (mutually exclusive with note-point editing)
+  pointSel=null; tempoSegSel=null;   // touching the lane hands the editor to tempo; segment grab re-sets the marker below
   const x=e.clientX-tempoCv.getBoundingClientRect().left, y=tempoEvtY(e), sec=clampSecToContent(tempoEvtSec(e));
 
   if(tool==='erase'){ const h=tempoHitHandle(x,y); if(h&&h.p){ dragHist=histSnapshot();
@@ -3165,7 +3302,7 @@ tempoCv.addEventListener('pointerdown',e=>{
     if(h&&h.p){ if(!tempoSel.has(h.p)){ tempoSel.clear(); tempoSel.add(h.p); }
       dragHist=histSnapshot(); startTempoMove([...tempoSel], h.r, x, y, sec); drawTempo(); return; }
     const sg=tempoHitSeg(x,y);
-    if(sg){ tempoSel.clear(); tempoSel.add(sg.a); tempoSel.add(sg.b);
+    if(sg){ tempoSel.clear(); tempoSel.add(sg.a); tempoSel.add(sg.b); tempoSegSel={a:sg.a,b:sg.b};
       dragHist=histSnapshot(); startTempoMove([sg.a,sg.b], sg.r, x, y, sec); drawTempo(); return; }
     tempoMarq={sx:x,sy:y,x2:x,y2:y,band:selBand}; drawTempo(); return;     // empty → sweep
   }
@@ -3262,10 +3399,9 @@ function tempoDeleteSelection(){ if(!tempoSel.size) return;
 function setTempoOpen(v){ tempoOpen=v; tempoPanel.classList.toggle('tcollapsed',!v);
   tempoToggle.textContent= v?'田 tempo ▾':'田 tempo ▸'; if(v){ resize(); drawTempo(); } }
 tempoToggle.addEventListener('click',()=>setTempoOpen(!tempoOpen));
-tempoCurveBtn.addEventListener('click',()=>{
-  if(tempoSel.size){ const pts=[...tempoSel]; const target=pts.every(p=>p.curve==='exp')?'linear':'exp';
-    dragHist=histSnapshot(); for(const p of pts) p.curve=target; tempoMapDirty(); changed(); commitDragHist(); }
-  else { tempoShape = tempoShape==='exp'?'linear':'exp'; updateTempoReadout(); drawTempo(); }
+tempoCurveBtn.addEventListener('click',()=>{   // only the deposit shape now (selections use the dropdowns), cycles all four
+  const i=TEMPO_CURVES.indexOf(tempoShape); tempoShape=TEMPO_CURVES[(i+1)%TEMPO_CURVES.length];
+  updateTempoReadout(); drawTempo();
 });
 tempoAffectBtn.addEventListener('click',()=>{
   const i=TEMPO_AFFECT_ORDER.indexOf(tempoAffect); tempoAffect=TEMPO_AFFECT_ORDER[(i+1)%TEMPO_AFFECT_ORDER.length];
