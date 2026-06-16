@@ -164,6 +164,54 @@ footer code{font-family:var(--mono); color:var(--ink)}
 .summary{background:#fff8; border:1px solid var(--edge-2); border-radius:8px; padding:9px 11px; margin:10px 0; line-height:1.5}
 .hint{color:var(--ink-faint); font-size:10.5px; line-height:1.5; margin-top:10px}
 .kbd{font-family:var(--mono); background:#fff; border:1px solid var(--edge); border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:10.5px}
+
+/* tempo track — docked translucent overlay over the lower roll (never reflows notes) */
+#tempoPanel{
+  position:absolute; left:0; right:0; bottom:0; z-index:15;
+  --tempoH:120px;
+  display:flex; flex-direction:column;
+  background:linear-gradient(180deg, #f1ecf4d9, #e7dfeeea);
+  border-top:1px solid var(--edge);
+  box-shadow:0 -14px 40px -30px #2a1a3a66;
+  backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+  user-select:none; touch-action:none;
+}
+#tempoHead{
+  display:flex; align-items:center; gap:8px; height:19px; padding:0 8px 0 0;
+  position:relative; cursor:default;
+  border-bottom:1px solid transparent;
+}
+#tempoPanel:not(.tcollapsed) #tempoHead{ border-bottom-color:var(--edge); }
+#tempoGrip{
+  flex:0 0 auto; align-self:stretch; width:26px; cursor:ns-resize;
+  background:
+    repeating-linear-gradient(90deg, var(--edge) 0 2px, transparent 2px 5px) center/16px 2px no-repeat;
+  opacity:.7;
+}
+#tempoPanel.tcollapsed #tempoGrip{ cursor:default; opacity:.35; }
+#tempoToggle{
+  flex:0 0 auto; font-family:var(--mono); font-size:11px; letter-spacing:.02em;
+  background:none; border:none; color:var(--tide); font-weight:600;
+  cursor:pointer; padding:2px 4px; line-height:1;
+}
+#tempoToggle:hover{ color:var(--ink); }
+#tempoReadout{
+  flex:1 1 auto; min-width:0; font-size:10.5px; color:var(--ink-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.tspacer{ flex:1 1 auto; }
+.tbtn{
+  flex:0 0 auto; font-family:var(--mono); font-size:10.5px;
+  background:#fff8; border:1px solid var(--edge); border-radius:4px;
+  color:var(--ink-dim); cursor:pointer; padding:1px 7px; line-height:1.5;
+}
+.tbtn:hover:not(:disabled){ background:#fff; border-color:var(--tide); color:var(--ink); }
+.tbtn:disabled{ opacity:.4; cursor:default; }
+#tempo{
+  display:block; width:100%; height:var(--tempoH);
+  cursor:crosshair; touch-action:none; background:transparent;
+}
+#tempoPanel.tcollapsed #tempo{ display:none; }
 ::-webkit-scrollbar{width:11px;height:11px}
 ::-webkit-scrollbar-thumb{background:var(--edge); border-radius:6px; border:2px solid var(--panel)}
 ::-webkit-scrollbar-track{background:transparent}
@@ -322,6 +370,18 @@ footer code{font-family:var(--mono); color:var(--ink)}
 <canvas id="scrub" title="playhead lane — click or drag to place the playhead (the ruler above the grid stays a scroll handle)"></canvas>
 <div class="stage tool-hold" id="stage">
   <canvas id="roll"></canvas>
+  <div id="tempoPanel" class="tcollapsed" title="tempo track — bpm over the score. metered regions only; free time has no tempo.">
+    <div id="tempoHead">
+      <span id="tempoGrip" title="drag to resize"></span>
+      <button id="tempoToggle" title="show / hide the tempo track">田 tempo</button>
+      <span id="tempoReadout"></span>
+      <span class="tspacer"></span>
+      <button id="tempoAffectBtn" class="tbtn" title="when a deposited point splits a line, which side adopts the new shape — ⊘ neither · ▸ after · ◂ before · ◂▸ both">⊘ keep</button>
+      <button id="tempoCurveBtn" class="tbtn" title="segment shape — ╱ linear (ramp) / ⌒ exp (curved). with a point selected, sets its outgoing shape; otherwise the shape new points deposit with">╱ linear</button>
+      <button id="tempoDelBtn" class="tbtn" title="delete selected tempo point" disabled>✕</button>
+    </div>
+    <canvas id="tempo"></canvas>
+  </div>
   <div class="drawer" id="drawer">
     <button class="close" id="drawerClose">✕</button>
     <h3 id="drawerTitle">Pitch-bend report</h3>
@@ -635,6 +695,7 @@ function ensureRegions(){ if(!regions.length){ const r=makeRegion(); r.name='Reg
 function activeRegion(){ ensureRegions(); return regions.find(r=>r.id===activeRegionId)||regions[0]; }
 function mainSystem(r){ r=r||activeRegion(); return r.systems.find(s=>s.id===r.main)||r.systems[0]; }
 function syncRegionFromControls(){          // DOM -> active region's main system
+  tempoMapDirty();
   const m=mainSystem(); if(!m) return;
   m.bpm=settings.bpm; m.sigNum=settings.sigNum; m.sigDen=settings.sigDen; m.a4=settings.a4; m.bars=settings.bars;
 }
@@ -657,22 +718,21 @@ function normalizeNotes(){                   // every note belongs to the active
    and a bar spans 2.5 quarter-durations — the "2.5/4" equivalence, honest in seconds. */
 function unitsPerSec(m){ return m.kind==='chronological'?1:(m.bpm/60)*((m.sigDen||4)/4); }
 function quartersPerBar(m){ return (m.sigNum||4)*4/(m.sigDen||4); }   // the host span parameter (one number; num/den is its notational factoring)
-function noteStartSec(n){ const r=regionById(n.region), m=mainSystem(r); return regionStartSec(r)+n.start/unitsPerSec(m); }
+function noteStartSec(n){ return beatToSecIn(n.start, regionById(n.region)); }
 function normalizeHybrids(){
   for(const n of notes){
     if(!n.end||!n.end.region) continue;
     const er=regions.find(r=>r.id===n.end.region);
     if(!er){ delete n.end; continue; }                          // hang target gone -> plain note
-    const endSec=regionStartSec(er)+n.end.beat/unitsPerSec(mainSystem(er));
-    const sSec=noteStartSec(n);
-    n.dur=Math.max(1e-4,(endSec-sSec)*unitsPerSec(mainSystem(regionById(n.region))));
+    const endSec=beatToSecIn(n.end.beat, er);
+    n.dur=Math.max(1e-4, secToBeatIn(endSec, regionById(n.region)) - n.start);
   }
 }
 function updateHybridEnd(n){                                    // after a direct drag: re-derive the hang from geometry
   if(!n.end||!n.end.region) return;
   const er=regions.find(r=>r.id===n.end.region); if(!er) return;
-  const endSec=noteStartSec(n)+n.dur/unitsPerSec(mainSystem(regionById(n.region)));
-  n.end.beat=(endSec-regionStartSec(er))*unitsPerSec(mainSystem(er));
+  const endSec=beatToSecIn(n.start+n.dur, regionById(n.region));
+  n.end.beat=secToBeatIn(endSec, er);
 }
 /* relabel a note from raw geometry, seconds conserved: if the start crossed into another region the
    note re-homes there; if the end lands outside home it hangs on that region's chart (hybrid); if the
@@ -681,14 +741,14 @@ function updateHybridEnd(n){                                    // after a direc
 function deriveHang(n){
   ensureRegions(); if(!regions.length) return;
   const home=regionById(n.region);
-  const sSec=regionStartSec(home)+n.start/upsOf(home);
-  const eSec=sSec+Math.max(n.dur,1e-4)/upsOf(home);
+  const sSec=beatToSecIn(n.start, home);
+  const eSec=beatToSecIn(n.start+Math.max(n.dur,1e-4), home);
   const sr=regionAtSec(clampSecToContent(sSec));                       // start defines home (boundary -> later region)
-  if(sr.id!==home.id){ n.start=(sSec-regionStartSec(sr))*upsOf(sr); if(n.hangsOn!=null) n.hangsOn=sr.main; }
+  if(sr.id!==home.id){ n.start=secToBeatIn(sSec, sr); if(n.hangsOn!=null) n.hangsOn=sr.main; }
   n.region=sr.id;
-  n.dur=Math.max(1e-4,(eSec-sSec)*upsOf(sr));
+  n.dur=Math.max(1e-4, secToBeatIn(eSec, sr) - n.start);
   const er=regionAtSec(clampSecToContent(eSec-1e-7));                  // end on a boundary stays with the earlier chart
-  if(er.id!==sr.id){ n.end=n.end||{}; n.end.region=er.id; n.end.beat=(eSec-regionStartSec(er))*upsOf(er); }
+  if(er.id!==sr.id){ n.end=n.end||{}; n.end.region=er.id; n.end.beat=secToBeatIn(eSec, er); }
   else if(n.end) delete n.end;
 }
 
@@ -745,14 +805,57 @@ function focusPitchRegion(id){
   if(typeof regimePill==='function') regimePill();
 }
 function activePitchRegion(){ ensurePitchRegions(); return pitchRegions.find(p=>p.id===activePitchRegionId)||pitchRegions[0]; }
+/* a pitch marker hangs on a time-region like a note: its position is stored relative to a
+   home region — beatToSecIn/secToBeatIn fold metered-beats and chrono-seconds into one local
+   coordinate — so when a tempo curve re-times that region the marker moves WITH the music
+   instead of standing still at an absolute second. A marker is a single hanging point; the
+   next marker's position is what ends its span (no duration of its own). */
+function derivePitchHang(pr){ ensureRegions();
+  if(pr.startSec<=1e-9){ pr.hang={region:regions[0].id, at:0}; return; }      // the opening marker pins to the very start
+  const home=regionAtSec(clampSecToContent(pr.startSec));
+  pr.hang={region:home.id, at:secToBeatIn(pr.startSec, home)}; }
+function applyPitchHang(pr){
+  const home=pr.hang && regionById(pr.hang.region);
+  if(!home){ derivePitchHang(pr); return; }                                   // home region gone → re-home from current sec
+  pr.startSec=Math.max(0, beatToSecIn(pr.hang.at, home)); }
+function refreshPitchHangs(){ ensurePitchRegions();
+  for(const pr of pitchRegions){ if(!pr.hang) derivePitchHang(pr); else applyPitchHang(pr); }   // capture once, then apply
+  pitchRegions.sort((a,b)=>a.startSec-b.startSec); }
 function splitPitchAt(sec){
   ensurePitchRegions();
   const cur=pitchRegionAtSec(sec);
   if(Math.abs(sec-cur.startSec)<1e-6){ flash('already a pitch boundary here'); return; }
   pushHistory();
-  const np={id:'p'+(PRID++), startSec:sec, scaleId:cur.scaleId, regime:cur.regime};
+  const np={id:'p'+(PRID++), startSec:sec, scaleId:cur.scaleId, regime:cur.regime}; derivePitchHang(np);
   pitchRegions.push(np); pitchRegions.sort((a,b)=>a.startSec-b.startSec);
   focusPitchRegion(np.id); changed(); flash('pitch region sliced');
+}
+/* split a region's tempo curve at cutQ quarters. left keeps the points before the
+   cut; right restarts at the interpolated seam value so a cut through a linear ramp
+   stays continuous once the two now-adjacent metered regions re-gather into one run
+   (buildTempoMap). curve allegiance: the segment crossing the cut keeps its shape on
+   both sides. */
+function _bpmAtQ(eff,q){
+  for(let i=0;i<eff.length;i++){ const a=eff[i], b=eff[i+1];
+    if(!b) return a.bpm;                                            // past the last point → hold
+    if(q<=b.at+1e-9){ if(Math.abs(b.bpm-a.bpm)<1e-9) return a.bpm;
+      const dq=Math.max(1e-9,b.at-a.at), f=q-a.at; return _bpmAt(a,b,dq,f); } }   // honours linear / exp / hold
+  return eff[eff.length-1].bpm;
+}
+function _curveAtQ(eff,q){
+  for(let i=0;i<eff.length;i++){ const a=eff[i], b=eff[i+1];
+    if(!b) return 'square'; if(q<=b.at+1e-9) return a.curve||'square'; }
+  return 'square';
+}
+function splitTempo(m, cutQ){
+  if(m.kind==='chronological' || !(m.tempo&&m.tempo.length)) return null;
+  const eff=effTempo(m);                                            // [0,Q], q=0 covered, sorted
+  const bCut=_bpmAtQ(eff,cutQ), cCut=_curveAtQ(eff,cutQ);
+  const left=[]; for(const p of eff){ if(p.at < cutQ-1e-9) left.push({at:p.at,bpm:p.bpm,curve:p.curve}); }
+  if(!left.length || left[0].at>1e-9) left.unshift({at:0,bpm:eff[0].bpm,curve:eff[0].curve});
+  const right=[{at:0,bpm:bCut,curve:cCut}];
+  for(const p of eff){ if(p.at > cutQ+1e-9) right.push({at:p.at-cutQ,bpm:p.bpm,curve:p.curve}); }
+  return {left,right};
 }
 function splitRegionAt(r, cutBeat){
   const m=mainSystem(r);
@@ -763,8 +866,12 @@ function splitRegionAt(r, cutBeat){
   const r2={ id:newRegionId(), name:'Region '+(regions.length+1), main:r.main, systems:r.systems.map(s=>Object.assign({},s)) };
   const cutUnits = (m.kind==='chronological') ? cutBeat : cutBeat/(m.sigNum||4);   // seconds or bars
   const totalUnits = (m.bars||settings.bars);
+  // partition the tempo curve while m still spans the WHOLE region (effTempo reads Q_OF(m))
+  const tsplit = (m.kind!=='chronological') ? splitTempo(m, beatToQ(cutBeat,m)) : null;
   m.bars = cutUnits;
-  mainSystem(r2).bars = totalUnits - cutUnits;
+  const r2m=mainSystem(r2); r2m.bars = totalUnits - cutUnits;
+  if(tsplit){ m.tempo=tsplit.left; r2m.tempo=tsplit.right; }
+  else { if('tempo' in m) delete m.tempo; if('tempo' in r2m) delete r2m.tempo; }   // break the shallow-copy alias
   regions.splice(i+1,0,r2);
   for(const n of notes){
     if(n.region!==r.id) continue;
@@ -779,10 +886,9 @@ function splitRegionAt(r, cutBeat){
 function regUnitSec(m){ return m.kind==='chronological' ? 1 : (m.sigNum||4)/unitsPerSec(m); }   // seconds per "snap unit" (a bar, or 1s)
 function snapBoundarySec(sec, i, mode){
   if(!settings.snapTime) return sec;
-  if(mode==='left'||mode==='end'){ const m=mainSystem(regions[i]), st=regionStartSec(regions[i]); const u=regUnitSec(m);
-    return st + Math.round((sec-st)/u)*u; }                      // that region's own grid -> clean ending for it
-  const m=mainSystem(regions[i+1]), anchor=regionStartSec(regions[i+1]); const u=regUnitSec(m);
-  return anchor + Math.round((sec-anchor)/u)*u;                  // right region's units from the boundary -> "per second / per bar"
+  const r = (mode==='left'||mode==='end')? regions[i] : regions[i+1];   // snap to that region's bar grid (curve-aware)
+  const m=mainSystem(r); if(m.kind==='chronological'){ const st=regionStartSec(r); return st+Math.round(sec-st); }
+  const bar=(m.sigNum||4); const b=secToBeatIn(sec, r); return beatToSecIn(Math.round(b/bar)*bar, r);
 }
 function moveBoundary(i, newBoundarySec){
   const left=regions[i], right=regions[i+1];
@@ -791,23 +897,21 @@ function moveBoundary(i, newBoundarySec){
   newBoundarySec=Math.max(leftStart+MIN, Math.min(rightEnd-MIN, newBoundarySec));
   const lm=mainSystem(left), rm=mainSystem(right);
   // record affected notes' absolute seconds BEFORE resizing (start AND end — shape is conserved in time)
-  const aff=notes.filter(n=>n.region===left.id||n.region===right.id).map(n=>{
-    const r=regionById(n.region), m=mainSystem(r), rs=regionStartSec(r), spb=1/unitsPerSec(m);
-    return {n, sec: rs+n.start*spb, endSec: rs+(n.start+(n.dur||0))*spb};
-  });
+  const aff=notes.filter(n=>n.region===left.id||n.region===right.id).map(n=>({n, sec:noteStartSec(n), endSec:noteEndSec(n)}));
   const hangPre=new Map();   // pre-resize absolute seconds of every hang pointing at either region
   for(const n of notes){ if(n.end&&(n.end.region===left.id||n.end.region===right.id)){
-    const er=regionById(n.end.region); hangPre.set(n, regionStartSec(er)+n.end.beat/unitsPerSec(mainSystem(er))); } }
+    const er=regionById(n.end.region); hangPre.set(n, beatToSecIn(n.end.beat, er)); } }
   // resize both regions to meet at the new boundary
   lm.bars = (newBoundarySec-leftStart)/regUnitSec(lm);
   rm.bars = (rightEnd-newBoundarySec)/regUnitSec(rm);
+  tempoMapDirty();                          // extents just changed; re-derive note coords against the fresh map
   // reassign each note to whichever region now owns its onset; recompute local beats AND duration (seconds conserved)
   for(const {n,sec,endSec} of aff){
     const goLeft = sec < newBoundarySec-1e-9;
-    const m = goLeft?lm:rm, origin = goLeft?leftStart:newBoundarySec, ups = unitsPerSec(m);  // units per second
-    n.region = goLeft?left.id:right.id;
-    n.start = (sec-origin)*ups;
-    n.dur   = Math.max(1e-4,(endSec-sec)*ups);
+    const rg = goLeft?left:right;
+    n.region = rg.id;
+    n.start = secToBeatIn(sec, rg);
+    n.dur   = Math.max(1e-4, secToBeatIn(endSec, rg) - n.start);
   }
   // hybrid end-hangs pointing at either region: conserve their absolute seconds, re-home if the boundary passed them
   for(const n of notes){
@@ -815,8 +919,7 @@ function moveBoundary(i, newBoundarySec){
     const endSec=hangPre.get(n);
     const goLeft = endSec < newBoundarySec-1e-9;
     n.end.region = goLeft?left.id:right.id;
-    const origin = goLeft?leftStart:newBoundarySec, ups = unitsPerSec(goLeft?lm:rm);
-    n.end.beat = (endSec-origin)*ups;
+    n.end.beat = secToBeatIn(endSec, goLeft?left:right);
   }
   applyRegionToControls(activeRegion());   // keep controls in step (prevents stale-sync clobber)
   changed(); updateRegionIndicator();
@@ -886,9 +989,10 @@ function pushUndo(snap){ undoStack.push(snap); if(undoStack.length>HMAX) undoSta
 function pushHistory(){ pushUndo(histSnapshot()); redoStack=[]; refreshHistBtns(); }   // call BEFORE a mutation
 function commitDragHist(){ if(dragHist!=null){ if(dragHist!==histSnapshot()){ pushUndo(dragHist); redoStack=[]; } dragHist=null; refreshHistBtns(); } }
 function restoreHist(json){
+  tempoMapDirty();
   const o=JSON.parse(json);
   if(Array.isArray(o)){ notes=o; } else { notes=o.n||[]; if(o.r){ regions=o.r; activeRegionId=o.a; } if(o.p){ pitchRegions=o.p; activePitchRegionId=o.ap; } }
-  selection.clear(); ptSel=new Map(); segSel=null; pointSel=null;
+  selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; tempoSel.clear(); tempoDrag=null; tempoMarq=null;
   NID=Math.max(0, ...notes.map(n=>n.id))+1;
   applyRegionToControls(activeRegion());
   clampScroll(); changed();
@@ -985,42 +1089,164 @@ function totalBeats(){ return settings.bars*settings.sigNum; }
 /* seconds primitives — the global clock the canvas scales to */
 function secToX(sec){ return GUT_L - view.scrollX + sec*view.pxPerSec; }
 function xToSec(x){ return (x - GUT_L + view.scrollX)/view.pxPerSec; }
-/* region tiling on the global clock */
-function regionSecLen(r){ const m=mainSystem(r); const units=(m.bars||settings.bars)*(m.sigNum||4);
-  return m.kind==='chronological' ? (m.bars||settings.bars) : units/unitsPerSec(m); }
-function regionStartSec(r){ let s=0; for(const x of regions){ if(x.id===r.id) break; s+=regionSecLen(x); } return s; }
-function regionAtSec(sec){ let s=0; for(const r of regions){ const len=regionSecLen(r); if(sec<s+len) return r; s+=len; } return regions[regions.length-1]||activeRegion(); }
+/* ============================================================
+   TEMPO AS A CHART OVER THE QUARTER AXIS  (the integrator)
+   ------------------------------------------------------------
+   bpm = ♩/min, the host clock (handover: bpm stays anchored to the quarter). A
+   metered region's metric content — its quarter-length Q = bars·sigNum·4/sigDen —
+   is the INVARIANT; the tempo curve maps Q to seconds; the region's extent in
+   seconds is DERIVED (the golden-rule INVERSION, deliberate: the ♩= ribbon box
+   still RELABELS a fixed span; dragging a point in the tempo track RE-TIMES,
+   moving the extent and everything downstream — two verbs, two surfaces).
+
+   m.tempo : [{at, bpm, curve}] region-local. at = QUARTERS from region start;
+             curve names the segment FROM this point TO the next:
+             'square' (hold, then jump = abrupt) | 'linear' (ramp = accel/rall).
+   Absent/empty m.tempo  ⇒  implicit [{at:0, bpm:m.bpm, 'square'}]  ⇒  today's flat
+   region exactly (#10 parity, proven). A maximal run of ADJACENT metered regions
+   shares ONE continuous quarter axis, so a 'linear' point ramps across the bar-line
+   seam (continuous tempo track, point 3); a CHRONOLOGICAL region is an opaque
+   seconds chunk that BREAKS the run — no tempo there, the track vanishes and
+   resumes at the next meter (points 1,2,5). Tempo points never enter free time. */
+const Q_OF=(m)=> (m.bars||settings.bars)*(m.sigNum||4)*4/(m.sigDen||4);   // region quarter-length
+function effTempo(m){
+  const ps=(m.tempo&&m.tempo.length)? m.tempo.map(p=>({at:p.at,bpm:p.bpm,curve:p.curve})) : [{at:0,bpm:m.bpm||120,curve:'linear'}];
+  ps.sort((a,b)=>a.at-b.at);
+  if(ps[0].at>1e-9) ps.unshift({at:0,bpm:ps[0].bpm,curve:'linear'});       // cover from q=0
+  const Q=Q_OF(m); for(const p of ps) p.at=Math.max(0,Math.min(Q,p.at));   // clamp the COPY, not stored data
+  return ps;
+}
+// bpm at f quarters into a segment a→c, by the segment's shape (a.curve governs)
+function _bpmAt(a,c,dq,f){ if(Math.abs(c.bpm-a.bpm)<1e-9) return a.bpm;
+  if(a.curve==='linear') return a.bpm+(c.bpm-a.bpm)*f/dq;
+  if(a.curve==='exp')    return a.bpm*Math.pow(c.bpm/a.bpm, f/dq);     // geometric ramp
+  return a.bpm; }                                                       // flat / legacy hold
+function _segSec(dq,b0,b1,curve){ if(dq<=0)return 0;
+  if(Math.abs(b1-b0)<1e-9) return 60*dq/b0;                                                  // flat
+  if(curve==='exp')    return 60*dq*(1/b0-1/b1)/Math.log(b1/b0);                              // ∫60/bpm, bpm geometric
+  if(curve==='linear') return 60*dq*Math.log(b1/b0)/(b1-b0);                                  // ∫60/bpm, bpm linear
+  return 60*dq/b0; }                                                                          // legacy hold
+function _segSecPart(f,dq,b0,b1,curve){ if(f<=0)return 0;
+  if(Math.abs(b1-b0)<1e-9) return 60*f/b0;
+  if(curve==='exp'){ const bf=b0*Math.pow(b1/b0, f/dq); return 60*dq*(1/b0-1/bf)/Math.log(b1/b0); }
+  if(curve==='linear'){ const bf=b0+(b1-b0)*(f/dq); return 60*f*Math.log(bf/b0)/(bf-b0); }
+  return 60*f/b0; }
+function _segQAt(ds,dq,b0,b1,curve){ if(ds<=0)return 0;
+  if(Math.abs(b1-b0)<1e-9) return ds*b0/60;
+  if(curve==='exp'){ const L=Math.log(b1/b0); const bf=1/(1/b0 - ds*L/(60*dq)); return dq*Math.log(bf/b0)/L; }  // inverse of exp part
+  if(curve==='linear'){ const k=(b1-b0)/dq; return (b0/k)*(Math.exp(k*ds/60)-1); }                              // inverse of the linear ramp
+  return ds*b0/60; }
+let _tmap=null; function tempoMapDirty(){ _tmap=null; }
+/* ---- tempo communication ----------------------------------------------------
+   A metered region with no tempo points of its own BORROWS a flat value from the
+   nearest POINTED metered region — backward first (taking its exit), else forward
+   (taking its entry). The scalar value crosses chronological walls, exactly like a
+   real tempo map; a ramp's *slope* never does, because every run pins flat ±∞
+   endpoints, so a run's exit is always static. One pointed region can therefore
+   drive every empty region in the score, and moving it re-times them all (the
+   extent cascade): metered seconds are derived, chronological seconds are frozen
+   in duration but slide in position. ---------------------------------------- */
+function regionHasOwnTempo(m){ return m.kind!=='chronological' && m.tempo && m.tempo.length>0; }
+function _entryBpm(m){ const p=effTempo(m); return p[0].bpm; }                 // first effective point
+function _exitBpm(m){ const p=effTempo(m); return p[p.length-1].bpm; }         // last effective point
+function resolveBorrowed(){
+  const met=regions.filter(r=>mainSystem(r).kind!=='chronological');          // metered regions, score order
+  const out={};
+  for(let i=0;i<met.length;i++){ const m=mainSystem(met[i]); if(regionHasOwnTempo(m)) continue;
+    let v=null;
+    for(let j=i-1;j>=0;j--){ const mj=mainSystem(met[j]); if(regionHasOwnTempo(mj)){ v=_exitBpm(mj); break; } }   // prev → exit
+    if(v==null) for(let j=i+1;j<met.length;j++){ const mj=mainSystem(met[j]); if(regionHasOwnTempo(mj)){ v=_entryBpm(mj); break; } } // next → entry
+    out[met[i].id]= (v==null? (m.bpm||120) : v);                              // all-empty → ribbon (== old flat behaviour)
+  }
+  return out;
+}
+function effectivePoints(m, rid, borrowed){
+  if(regionHasOwnTempo(m)) return effTempo(m);
+  const v=(borrowed && borrowed[rid]!=null)? borrowed[rid] : (m.bpm||120);
+  return [{at:0,bpm:v,curve:'linear'}];                                       // one flat point; ±∞ holds it across the region
+}
+/* the score always carries at least one explicit tempo point (unless it is wholly
+   free time): if every metered region is empty, anchor one at the first metered
+   region. It inherits that region's ribbon ♩= (120 in a fresh project), so the act
+   of deleting points never changes how the piece sounds. */
+function ensureTempoFloor(){
+  ensureRegions();
+  if(regions.some(r=>regionHasOwnTempo(mainSystem(r)))) return;
+  const first=regions.find(r=>mainSystem(r).kind!=='chronological');
+  if(first){ const fm=mainSystem(first); fm.tempo=[{at:0,bpm:fm.bpm||120,curve:'linear'}]; tempoMapDirty(); }
+}
+function buildTempoMap(){
+  ensureRegions(); const borrowed=resolveBorrowed(); const segs=[]; const regSec={}; let sec=0, i=0;
+  while(i<regions.length){
+    const r=regions[i], m=mainSystem(r);
+    if(m.kind==='chronological'){ const len=(m.bars||settings.bars);
+      regSec[r.id]=[sec,sec+len]; segs.push({region:r.id,chrono:true,sec0:sec,sec1:sec+len,q0:0,q1:0}); sec+=len; i++; continue; }
+    const bps=[]; let qOff=0; const ends=[];                          // gather a maximal metered run
+    while(i<regions.length){ const rr=regions[i], mm=mainSystem(rr); if(mm.kind==='chronological') break;
+      for(const p of effectivePoints(mm, rr.id, borrowed)) bps.push({q:qOff+p.at,bpm:p.bpm,curve:p.curve});
+      qOff+=Q_OF(mm); ends.push({region:rr.id,qEnd:qOff}); i++; }
+    bps.push({q:qOff,bpm:bps[bps.length-1].bpm,curve:'linear'});       // virtual hold to the run end
+    for(let b=0;b<bps.length-1;b++){ const a=bps[b], c=bps[b+1], dq=c.q-a.q; if(dq<1e-12) continue;
+      const cuts=[a.q]; for(const e of ends){ if(e.qEnd>a.q+1e-9&&e.qEnd<c.q-1e-9) cuts.push(e.qEnd); } cuts.push(c.q);
+      for(let s=0;s<cuts.length-1;s++){ const qa=cuts[s], qc=cuts[s+1], fa=qa-a.q, fc=qc-a.q;
+        const bA=_bpmAt(a,c,dq,fa), bC=_bpmAt(a,c,dq,fc);
+        const ds=_segSec(qc-qa,bA,bC,a.curve); const reg=ends.find(e=>qc<=e.qEnd+1e-9).region;
+        segs.push({region:reg,chrono:false,q0:qa,q1:qc,sec0:sec,sec1:sec+ds,bpm0:bA,bpm1:bC,curve:a.curve}); sec+=ds; } }
+    for(const e of ends){ const rs=segs.filter(g=>g.region===e.region&&!g.chrono); regSec[e.region]=[rs[0].sec0,rs[rs.length-1].sec1]; }
+  }
+  return {segs,totalSec:sec,regSec};
+}
+function tmap(){ if(!_tmap) _tmap=buildTempoMap(); return _tmap; }
+function regionSegs(id){ return tmap().segs.filter(g=>g.region===id&&!g.chrono); }
+/* region tiling on the global clock — now DERIVED from the tempo map */
+function regionSecLen(r){ const e=tmap().regSec[r.id]; return e? e[1]-e[0] : 0; }
+function regionStartSec(r){ const e=tmap().regSec[r.id]; return e? e[0] : 0; }
+function regionAtSec(sec){ const t=tmap(); for(const r of regions){ const e=t.regSec[r.id]; if(e&&sec<e[1]-1e-9) return r; } return regions[regions.length-1]||activeRegion(); }
 function regionAtX(x){ return regionAtSec(xToSec(x)); }
 /* a region-local beat -> x, for any region (the backdrop uses this; the active region is the default) */
 let _ctxRegion=null;   // drawing/hit-test context: which region's coordinates beatToX uses (null = active)
 function regionById(id){ return regions.find(r=>r.id===id)||activeRegion(); }
-function beatToSecIn(b,r){ const m=mainSystem(r); return regionStartSec(r) + b/unitsPerSec(m); }
+/* local beat (1/sigDen units) <-> region-local quarters */
+function beatToQ(b,m){ return b*4/(m.sigDen||4); }
+function qToBeat(q,m){ return q*(m.sigDen||4)/4; }
+function beatToSecIn(b,r){ const m=mainSystem(r);
+  if(m.kind==='chronological') return regionStartSec(r)+b;                 // free time: beats ARE seconds
+  const segs=regionSegs(r.id); if(!segs.length) return regionStartSec(r)+b/unitsPerSec(m);
+  const q0=segs[0].q0, tgt=q0+beatToQ(b,m);
+  for(const g of segs){ if(tgt<=g.q1+1e-9) return g.sec0+_segSecPart(tgt-g.q0,g.q1-g.q0,g.bpm0,g.bpm1,g.curve); }
+  const L=segs[segs.length-1]; return L.sec1+60*(tgt-L.q1)/L.bpm1; }
+function secToBeatIn(sec,r){ const m=mainSystem(r);
+  if(m.kind==='chronological') return sec-regionStartSec(r);
+  const segs=regionSegs(r.id); if(!segs.length) return (sec-regionStartSec(r))*unitsPerSec(m);
+  const q0=segs[0].q0;
+  for(const g of segs){ if(sec<=g.sec1+1e-9){ const f=_segQAt(sec-g.sec0,g.q1-g.q0,g.bpm0,g.bpm1,g.curve); return qToBeat((g.q0+f)-q0,m); } }
+  const L=segs[segs.length-1]; return qToBeat((L.q1+(sec-L.sec1)*L.bpm1/60)-q0,m); }
 function beatToXin(b,r){ return secToX(beatToSecIn(b,r)); }
 function beatToX(b){ return beatToXin(b, _ctxRegion||activeRegion()); }
-function xToBeat(x){ const r=activeRegion(); const m=mainSystem(r); const sec=xToSec(x)-regionStartSec(r); return sec*unitsPerSec(m); }
+function xToBeat(x){ const r=activeRegion(); return secToBeatIn(xToSec(x), r); }
 /* ---- cross-region kit: drags work in seconds (the one true axis) and re-enter any chart honestly ----
    "snapping vs hanging are different verbs": the cursor snaps to whichever region's grid it is OVER,
    while the value is stored in the note's HOME units — allegiance is decided later by deriveHang. */
 function totalSec(){ ensureRegions(); return regions.reduce((s,r)=>s+regionSecLen(r),0); }
 function upsOf(r){ return unitsPerSec(mainSystem(r)); }
 function pxPerBeatIn(r){ return view.pxPerSec/upsOf(r); }
-function xToBeatIn(x,r){ return (xToSec(x)-regionStartSec(r))*upsOf(r); }
+function xToBeatIn(x,r){ return secToBeatIn(xToSec(x), r); }
 function clampSecToContent(sec){ return Math.max(0,Math.min(totalSec(),sec)); }
 /* differential snap: snap an absolute second to the grid of whichever region owns that second */
 function snapSecToChart(sec){
   if(!settings.snapTime) return sec;
   const r=regionAtSec(sec), m=mainSystem(r), s0=regionStartSec(r);
-  const local=(sec-s0)*unitsPerSec(m);
+  const local=secToBeatIn(sec, r);
   const snapped = (r.id===activeRegionId) ? snapBeat(local)                       // active region keeps its cycle-aware snap
     : (m.kind==='chronological' ? Math.round(local) : Math.round(local/gridStepUnits(m))*gridStepUnits(m));
   return s0+snapped/unitsPerSec(m);
 }
 /* cursor x -> beat in region r's chart, snapped to the chart under the cursor, clamped to content */
-function xToBeatSnappedIn(x,r){ return (clampSecToContent(snapSecToChart(clampSecToContent(xToSec(x))))-regionStartSec(r))*upsOf(r); }
-function xToBeatClampedIn(x,r){ return (clampSecToContent(xToSec(x))-regionStartSec(r))*upsOf(r); }
+function xToBeatSnappedIn(x,r){ return secToBeatIn(clampSecToContent(snapSecToChart(clampSecToContent(xToSec(x)))), r); }
+function xToBeatClampedIn(x,r){ return secToBeatIn(clampSecToContent(xToSec(x)), r); }
 /* region-local beat values may run past the region (or negative) — content-wide clamp & chart snap in r's units */
-function clampBeatIn(b,r){ const s0=regionStartSec(r), u=upsOf(r); return Math.max(-s0*u, Math.min((totalSec()-s0)*u, b)); }
-function snapBeatIn(b,r){ const s0=regionStartSec(r), u=upsOf(r); return (snapSecToChart(s0+b/u)-s0)*u; }
+function clampBeatIn(b,r){ return Math.max(secToBeatIn(0,r), Math.min(secToBeatIn(totalSec(),r), b)); }
+function snapBeatIn(b,r){ return secToBeatIn(snapSecToChart(beatToSecIn(b,r)), r); }
 function midiToY(m){ return GUT_T - view.scrollY + (view.midiMax-m)*view.pxPerSemi; }
 function yToMidi(y){ return view.midiMax - (y - GUT_T + view.scrollY)/view.pxPerSemi; }
 function hzToY(hz){ return midiToY(freqToMidi(hz,settings.a4)); }
@@ -1137,6 +1363,7 @@ function draw(){
   // gutters cover spill
   drawGutters(W,H);
   if(typeof drawScrub==='function') drawScrub();   // the playhead lane shares the same x-frame
+  if(typeof drawTempo==='function' && tempoOpen) drawTempo();   // the tempo lane shares it too
 }
 
 function drawPitchGrid(W,H){
@@ -1299,7 +1526,7 @@ function drawRegionFrames(W,H){
   }
   // end of piece: a double bar, as in notation — with the last region's draggable end-flag
   { const endX=secToX(regions.reduce((s,r)=>s+regionSecLen(r),0));
-    if(endX>=GUT_L-2 && endX<=W+4){ ctx.strokeStyle='rgba(24,48,43,0.78)';
+    if(endX>=GUT_L-2 && endX<=W+4){ ctx.strokeStyle='rgba(17,137,126,0.55)';
       ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(Math.round(endX-4)+.5,GUT_T); ctx.lineTo(Math.round(endX-4)+.5,H); ctx.stroke();
       ctx.lineWidth=3;   ctx.beginPath(); ctx.moveTo(Math.round(endX)+.5,GUT_T);   ctx.lineTo(Math.round(endX)+.5,H);   ctx.stroke();
       if(endX>=GUT_L+13){ ctx.fillStyle='rgba(106,71,216,0.18)'; ctx.fillRect(endX-12,GUT_T+3,11,15);
@@ -1620,7 +1847,7 @@ cv.addEventListener('pointerdown',e=>{
           segSel=null;
           if(!selection.has(h.note.id)) selection.clear();
           selection.add(h.note.id);
-          pointSel={note:h.note, idx:(h.note.type==='hold'?0:h.idx)};
+          pointSel={note:h.note, idx:(h.note.type==='hold'?0:h.idx)}; if(tempoSel) tempoSel.clear();   // exclusive with ♩= entry
           drag={mode:'resize', note:h.note, ptIdx:h.idx, ep:(h.note.type==='hold'?(h.edge||holdEdge(h.note,p.x)):null), sx:p.x, sy:p.y, o:snapshot(h.note)};
         } else if(h.kind==='segment'){
           selection.clear(); pointSel=null; segSel={note:h.note, seg:h.seg};
@@ -1797,7 +2024,7 @@ cv.addEventListener('pointermove',e=>{
     // proposed new absolute positions for the two endpoints
     const mk=(i)=>{
       let beat=clampBeatIn(snapBeatIn(d.absPts[i].beat+rawDb,home),home);
-      const sec=regionStartSec(home)+beat/upsOf(home);
+      const sec=beatToSecIn(beat, home);
       let hz=snapPitchHzAt(midiToFreq(freqToMidi(d.absPts[i].hz,settings.a4)+rawDm,settings.a4), sec);
       return {beat,hz,curve:d.absPts[i].curve};
     };
@@ -1870,7 +2097,8 @@ cv.addEventListener('pointerup',e=>{
       if(drag.snap==='end') resizeLastRegion(drag.preview); else moveBoundary(drag.i, drag.preview);
       flash(drag.snap==='end'?'piece end moved':'boundary moved'); }
     if(drag.mode==='pitchBoundary'){ pushHistory();
-      pitchRegions[drag.i].startSec=drag.preview; pitchRegions.sort((a,b)=>a.startSec-b.startSec);
+      const pr=pitchRegions[drag.i]; pr.startSec=drag.preview; derivePitchHang(pr);   // re-home from where it was dropped
+      pitchRegions.sort((a,b)=>a.startSec-b.startSec);
       flash('tuning boundary moved'); }
     if(drag.mode==='playhead') endScrub();
     if(!['marquee','boundary','pitchBoundary','pan','scrollGutter','playhead'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
@@ -2456,8 +2684,19 @@ function applyPointHz(hz){
   changed();
 }
 ptHzIn.addEventListener('change',()=>{ const v=parseFloat(ptHzIn.value); if(v>0) applyPointHz(v); });
-ptNoteIn.addEventListener('change',()=>{ const hz=parseNoteCents(ptNoteIn.value,settings.a4); if(hz>0) applyPointHz(hz); else syncPointEditor(); });
+ptNoteIn.addEventListener('change',()=>{
+  const tp=selectedTempoPoint();
+  if(tp){ const v=parseFloat(ptNoteIn.value); if(v>0){ pushHistory(); tp.bpm=clampBpm(v); tempoMapDirty(); changed(); } else syncPointEditor(); return; }
+  const hz=parseNoteCents(ptNoteIn.value,settings.a4); if(hz>0) applyPointHz(hz); else syncPointEditor(); });
+function selectedTempoPoint(){ return (tempoSel && tempoSel.size===1 && !pointSel) ? [...tempoSel][0] : null; }
 function syncPointEditor(){
+  const tp=selectedTempoPoint();
+  if(tp){                                   // a tempo point: the note field becomes a ♩= entry; Hz stays off (bpm isn't a frequency)
+    ptHzIn.value=''; ptHzIn.disabled=true;
+    ptNoteIn.disabled=false; ptNoteIn.placeholder='♩=';
+    if(document.activeElement!==ptNoteIn) ptNoteIn.value=String(Math.round(tp.bpm*10)/10);
+    return;
+  }
   const on=!!pointSel && notes.includes(pointSel.note);
   if(!on){ pointSel=null; ptHzIn.value=''; ptHzIn.disabled=true; ptNoteIn.value=''; ptNoteIn.placeholder='–'; ptNoteIn.disabled=true; return; }
   const n=pointSel.note, i=n.type==='hold'?0:pointSel.idx;
@@ -2486,7 +2725,7 @@ function renderVoiceUI(){
    STATUS + LIFECYCLE
    ============================================================ */
 function changed(){
-  ensureRegions(); syncRegionFromControls(); normalizeNotes(); updateRegionIndicator();
+  tempoMapDirty(); ensureRegions(); syncRegionFromControls(); ensureTempoFloor(); refreshPitchHangs(); normalizeNotes(); updateRegionIndicator();
   if(segSel && !notes.includes(segSel.note)) segSel=null;
   if(pointSel && !notes.includes(pointSel.note)) pointSel=null;
   if(ptSel.size){ for(const n of [...ptSel.keys()]) if(!notes.includes(n)) ptSel.delete(n); }
@@ -2515,7 +2754,7 @@ window.addEventListener('keydown',e=>{
   if(map[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(map[e.code]);
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){ e.preventDefault(); if(e.shiftKey) redo(); else undo(); return; }
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){ e.preventDefault(); redo(); return; }
-  if(e.code==='Delete'||e.code==='Backspace'){ if(penNote) finalizePen(); else if(selection.size||ptSel.size){ deleteSelection(); changed(); } }
+  if(e.code==='Delete'||e.code==='Backspace'){ if(penNote) finalizePen(); else if(tempoOpen && tempoSel.size){ tempoDeleteSelection(); } else if(selection.size||ptSel.size){ deleteSelection(); changed(); } }
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyA'){ e.preventDefault(); segSel=null; pointSel=null; ptSel=new Map(); selection=new Set(notes.map(n=>n.id)); changed(); }
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyC'){ e.preventDefault(); doCopy(); }
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyX'){ e.preventDefault(); doCut(); }
@@ -2544,7 +2783,7 @@ playBtn.onclick=togglePlay;
 stopBtn.onclick=stopPlay;
 function togglePlay(){ playing?pausePlay():startPlay(); }
 function setPlayUI(on){ playBtn.textContent=on?'⏸ pause':'▶ play'; playBtn.classList.toggle('on',on); }
-function noteEndSec(n){ return noteStartSec(n)+Math.max(n.dur,1e-4)/upsOf(regionById(n.region)); }
+function noteEndSec(n){ return beatToSecIn(n.start+Math.max(n.dur,1e-4), regionById(n.region)); }
 function playPosSec(){ return Math.max(playFromSec, Math.min(totalSec(), playFromSec+(actx?actx.currentTime-playT0:0))); }
 function startPlay(){
   if(!notes.length) return;
@@ -2658,6 +2897,396 @@ scrub.addEventListener('pointerup',()=>{ if(scrubDrag){ scrubDrag=false; endScru
 scrub.addEventListener('pointercancel',()=>{ if(scrubDrag){ scrubDrag=false; endScrub(); } });
 
 /* ============================================================
+   TEMPO LANE  — the overlay editor for the bpm curve
+   ------------------------------------------------------------
+   A docked translucent panel over the lower roll. It shares the roll's x-frame
+   (secToX/xToSec) so the curve always lines up with the notes above it; vertical
+   is bpm, auto-fit and clamped. Points are stored region-local in m.tempo as
+   {at(quarters), bpm, curve}; an absent array reads as one flat point at the
+   ribbon bpm (today's behaviour). Dragging a point RE-TIMES (the integrator turns
+   quarters into seconds, the extent follows). Chronological spans are drawn as a
+   hatched "no tempo" gap and reject points (free time has no tempo). v1 keeps each
+   point inside its own region; continuity across adjacent metered regions is
+   already carried by the shared quarter axis of the run. */
+const tempoPanel=document.getElementById('tempoPanel');
+const tempoCv=document.getElementById('tempo'), tctx=tempoCv.getContext('2d');
+const tempoHead=document.getElementById('tempoHead'), tempoGrip=document.getElementById('tempoGrip');
+const tempoToggle=document.getElementById('tempoToggle'), tempoReadout=document.getElementById('tempoReadout');
+const tempoCurveBtn=document.getElementById('tempoCurveBtn'), tempoDelBtn=document.getElementById('tempoDelBtn');
+const tempoAffectBtn=document.getElementById('tempoAffectBtn');
+let tempoOpen=false;                 // collapsed by default — it's an opt-in surface
+let tempoSel=new Set();              // Set of selected stored point refs (live refs into m.tempo)
+let tempoMarq=null;                  // {sx,sy,x2,y2,band} while sweeping a selection
+let tempoShape='linear';             // shape new points deposit with (linear | exp)
+let tempoAffect='neither';           // when a deposit splits a line: which side adopts the deposit shape
+const TEMPO_AFFECT_ORDER=['neither','after','before','both'];
+const TEMPO_AFFECT_LABEL={neither:'⊘ keep', after:'▸ after', before:'◂ before', both:'◂▸ both'};
+// after a point np is inserted into region m, set the surrounding segment shapes per the affect mode.
+// a point's curve governs its OUTGOING segment, so np.curve is the C→B side and A.curve is the A→C side.
+function applyAffectOnInsert(m, np){
+  if(tempoAffect==='after') return;                 // np already carries the deposit shape → C→B is the new shape, A→C untouched
+  let A=null; for(const p of (m.tempo||[])){ if(p===np) continue; if(p.at<np.at-1e-9 && (!A||p.at>A.at)) A=p; }
+  const orig = A ? (A.curve||'linear') : tempoShape;  // the shape of the line being split
+  if(tempoAffect==='neither'){ np.curve=orig; }                                   // both halves keep the original shape
+  else if(tempoAffect==='before'){ if(A) A.curve=tempoShape; np.curve=orig; }      // A→C new, C→B original
+  else if(tempoAffect==='both'){ if(A) A.curve=tempoShape; np.curve=tempoShape; }  // both halves new
+}
+let tempoLo=60, tempoHi=180, tempoTopPad=12, tempoBotPad=14;   // current bpm window + vertical padding
+const TEMPO_BPM_MIN=20, TEMPO_BPM_MAX=400, TEMPO_SPAN_MIN=30, TEMPO_HIT=8;
+
+function bpmToY(bpm){ const H=tempoCv.clientHeight, top=tempoTopPad, bot=H-tempoBotPad;
+  const f=(bpm-tempoLo)/Math.max(1e-6,tempoHi-tempoLo); return bot-(bot-top)*f; }
+function yToBpm(y){ const H=tempoCv.clientHeight, top=tempoTopPad, bot=H-tempoBotPad;
+  const f=(bot-y)/Math.max(1,bot-top); return tempoLo+f*(tempoHi-tempoLo); }
+function tempoArr(m){ if(!Array.isArray(m.tempo)) m.tempo=[]; return m.tempo; }
+
+/* the editable handle list for a metered region: stored points, plus an implicit
+   coverage point at q=0 when the first stored point starts later (grabbing it
+   materialises a real entry). */
+function tempoHandlesFor(r){
+  const m=mainSystem(r); if(m.kind==='chronological') return [];
+  if(!(m.tempo&&m.tempo.length)) return [];          // empty region: just the borrowed flat line, no handle — a circle == a real point
+  const Q=Q_OF(m), out=[];
+  for(const p of m.tempo.slice().sort((a,b)=>a.at-b.at))
+    out.push({r,m,at:Math.max(0,Math.min(Q,p.at)),bpm:p.bpm,curve:p.curve||'linear',p});
+  return out;
+}
+function tempoHandleSec(h){ return beatToSecIn(qToBeat(h.at,h.m), h.r); }
+
+/* auto-fit the bpm window to everything currently on screen-ish (all metered
+   segments + handles), clamped and floored to a readable span. */
+function fitTempoRange(){
+  if(tempoDrag) return;   // hold the window steady mid-drag so the point stays under the cursor
+  let lo=Infinity, hi=-Infinity;
+  for(const g of tmap().segs){ if(g.chrono) continue; lo=Math.min(lo,g.bpm0,g.bpm1); hi=Math.max(hi,g.bpm0,g.bpm1); }
+  if(!isFinite(lo)){ lo=60; hi=180; }
+  if(hi-lo<TEMPO_SPAN_MIN){ const mid=(lo+hi)/2; lo=mid-TEMPO_SPAN_MIN/2; hi=mid+TEMPO_SPAN_MIN/2; }
+  const pad=(hi-lo)*0.12; lo-=pad; hi+=pad;
+  tempoLo=Math.max(TEMPO_BPM_MIN, Math.floor(lo)); tempoHi=Math.min(TEMPO_BPM_MAX, Math.ceil(hi));
+  if(tempoHi-tempoLo<TEMPO_SPAN_MIN) tempoHi=Math.min(TEMPO_BPM_MAX, tempoLo+TEMPO_SPAN_MIN);
+}
+
+function drawTempoGrid(W,H){
+  // mirror the roll's per-region snap grid into the lane (same beatToX frame → exact alignment),
+  // a touch fainter so it sits under the curve. only metered regions — free time is hatched instead.
+  const lineAt=(x)=>{ tctx.beginPath(); tctx.moveTo(Math.round(x)+.5,0); tctx.lineTo(Math.round(x)+.5,H); tctx.stroke(); };
+  for(const r of regions){ const m=mainSystem(r); if(m.kind==='chronological') continue;
+    const s0=regionStartSec(r), len=regionSecLen(r), x0=secToX(s0), x1=secToX(s0+len); if(x1<GUT_L||x0>W) continue;
+    _ctxRegion=r;
+    tctx.save(); const cx0=Math.max(GUT_L,x0), cx1=Math.min(W,x1);
+    tctx.beginPath(); tctx.rect(cx0,0,Math.max(0,cx1-cx0),H); tctx.clip();
+    const sig=m.sigNum||4, runits=(m.bars||settings.bars)*sig, step=gridStepUnits(m);
+    if(step<0.999 && pxPerBeatIn(r)*step>=6){ tctx.strokeStyle='rgba(40,82,76,0.05)'; tctx.lineWidth=1;
+      for(let b=0;b<=runits+1e-6;b+=step) lineAt(beatToX(b)); }                 // subdivisions
+    tctx.strokeStyle='rgba(40,82,76,0.11)'; tctx.lineWidth=1;
+    for(let b=0;b<=runits+1e-6;b++){ if(Math.abs(b/sig-Math.round(b/sig))<1e-6) continue; lineAt(beatToX(b)); }   // unit lines
+    tctx.strokeStyle='rgba(17,137,126,0.30)'; tctx.lineWidth=1.2;
+    for(let k=0;k*sig<=runits+1e-6;k++) lineAt(beatToX(k*sig));                 // bar lines (teal)
+    tctx.restore();
+  }
+  _ctxRegion=null;
+  const endX=secToX(regions.reduce((s,r)=>s+regionSecLen(r),0));               // end-of-piece bar, echoed subtly
+  if(endX>=GUT_L-2 && endX<=W+4){ tctx.strokeStyle='rgba(17,137,126,0.5)';
+    tctx.lineWidth=1; lineAt(endX-4); tctx.lineWidth=2.4; lineAt(endX); tctx.lineWidth=1; }
+}
+function drawTempo(){
+  // keep the buffer sized even while collapsed-but-laid-out; bail on zero box
+  const r=tempoCv.getBoundingClientRect();
+  if(r.width<1||r.height<1){ updateTempoReadout(); return; }
+  const w=Math.round(r.width*DPR), h=Math.round(r.height*DPR);
+  if(tempoCv.width!==w||tempoCv.height!==h){ tempoCv.width=w; tempoCv.height=h; }
+  tctx.setTransform(DPR,0,0,DPR,0,0);
+  const W=tempoCv.clientWidth, H=tempoCv.clientHeight;
+  tctx.clearRect(0,0,W,H);
+  fitTempoRange();
+  const t=tmap();
+
+  // plot field (right of the bpm gutter), bounded to content
+  const cx0=Math.max(GUT_L,secToX(0)), cx1=Math.min(W,secToX(t.totalSec));
+  tctx.fillStyle='#ffffff66'; tctx.fillRect(cx0,0,Math.max(0,cx1-cx0),H);
+
+  drawTempoGrid(W,H);   // the snap grid, extended down from the roll so points read against bars/beats
+
+  // horizontal bpm guide lines + labels in the gutter
+  tctx.textBaseline='middle'; tctx.font='9px '+col('--mono');
+  const ticks=tempoTicks(tempoLo,tempoHi);
+  for(const bv of ticks){ const y=bpmToY(bv);
+    tctx.strokeStyle=col('--edge'); tctx.globalAlpha=.5; tctx.beginPath();
+    tctx.moveTo(GUT_L,Math.round(y)+.5); tctx.lineTo(W,Math.round(y)+.5); tctx.stroke(); tctx.globalAlpha=1;
+    tctx.fillStyle=col('--ink-faint'); tctx.textAlign='right'; tctx.fillText(bv, GUT_L-6, y); }
+
+  // hatched "no tempo" over chronological spans
+  for(const g of t.segs){ if(!g.chrono) continue;
+    const x0=Math.max(GUT_L,secToX(g.sec0)), x1=Math.min(W,secToX(g.sec1)); if(x1<=x0) continue;
+    tctx.save(); tctx.beginPath(); tctx.rect(x0,0,x1-x0,H); tctx.clip();
+    tctx.strokeStyle=col('--edge'); tctx.globalAlpha=.6; tctx.lineWidth=1;
+    for(let x=x0-H;x<x1;x+=7){ tctx.beginPath(); tctx.moveTo(x,H); tctx.lineTo(x+H,0); tctx.stroke(); }
+    tctx.globalAlpha=1; tctx.restore();
+    tctx.fillStyle=col('--ink-faint'); tctx.textAlign='center'; tctx.font='9px '+col('--mono');
+    if(x1-x0>54) tctx.fillText('free time — no tempo',(x0+x1)/2,H-7); }
+
+  // the curve: stroke each metered segment; vertical steps appear where consecutive
+  // segments share an x but differ in bpm (square point → jump).
+  tctx.strokeStyle=col('--algae'); tctx.lineWidth=2; tctx.lineJoin='round';
+  let pen=false;
+  for(const g of t.segs){
+    if(g.chrono){ if(pen){ tctx.stroke(); pen=false; } continue; }
+    const xa=secToX(g.sec0), ya=bpmToY(g.bpm0);
+    if(!pen){ tctx.beginPath(); tctx.moveTo(xa,ya); pen=true; } else { tctx.lineTo(xa,ya); }
+    if(Math.abs(g.bpm1-g.bpm0)<1e-9 || (g.curve!=='linear'&&g.curve!=='exp')){ tctx.lineTo(secToX(g.sec1), bpmToY(g.bpm1)); }  // flat / jump connector
+    else { const dq=g.q1-g.q0, N=18, a={bpm:g.bpm0,curve:g.curve}, c={bpm:g.bpm1};                                            // sample the curve's true shape
+      for(let k=1;k<=N;k++){ const f=dq*k/N; tctx.lineTo(secToX(g.sec0+_segSecPart(f,dq,g.bpm0,g.bpm1,g.curve)), bpmToY(_bpmAt(a,c,dq,f))); } }
+  }
+  if(pen) tctx.stroke();
+
+  // points (skip the field clip so they sit on top), ringed by role
+  tempoHandles=[];
+  for(const reg of regions){
+    for(const hd of tempoHandlesFor(reg)){
+      const sec=tempoHandleSec(hd), x=secToX(sec), y=bpmToY(hd.bpm); hd.x=x; hd.y=y; hd.sec=sec;
+      tempoHandles.push(hd);
+      if(x<GUT_L-4||x>W+4) continue;
+      const onSeam=(hd.at<=1e-6)||(hd.at>=Q_OF(hd.m)-1e-6);
+      const sel=tempoSel.has(hd.p);
+      tctx.beginPath(); tctx.arc(x,y,sel?5:4,0,7);
+      tctx.fillStyle=col('--algae'); tctx.fill();
+      tctx.lineWidth=2; tctx.strokeStyle= sel? col('--ember') : (onSeam? col('--violet') : col('--algae')); tctx.stroke();
+    }
+  }
+  // marquee sweep
+  if(tempoMarq){ const x0=Math.min(tempoMarq.sx,tempoMarq.x2), x1=Math.max(tempoMarq.sx,tempoMarq.x2),
+      y0=Math.min(tempoMarq.sy,tempoMarq.y2), y1=Math.max(tempoMarq.sy,tempoMarq.y2);
+    let rx0=x0,rx1=x1,ry0=y0,ry1=y1;
+    if(tempoMarq.band==='vertical'||tempoMarq.band==='region'){ ry0=0; ry1=H; }   // time / region span: full height
+    if(tempoMarq.band==='horizontal'){ rx0=GUT_L; rx1=W; }                          // bpm span: full width
+    tctx.fillStyle=col('--ember')+'22'; tctx.fillRect(rx0,ry0,rx1-rx0,ry1-ry0);
+    tctx.strokeStyle=col('--ember'); tctx.lineWidth=1; tctx.setLineDash([4,3]); tctx.strokeRect(rx0,ry0,rx1-rx0,ry1-ry0); tctx.setLineDash([]); }
+  // left gutter cap (over guide lines) + title
+  tctx.fillStyle='#f1ecf4cc'; tctx.fillRect(0,0,GUT_L,H);
+  for(const bv of ticks){ const y=bpmToY(bv);
+    tctx.fillStyle=col('--ink-faint'); tctx.textAlign='right'; tctx.font='9px '+col('--mono'); tctx.textBaseline='middle';
+    tctx.fillText(bv, GUT_L-6, y); }
+  tctx.fillStyle=col('--ink-dim'); tctx.textAlign='left'; tctx.font='9px '+col('--mono'); tctx.textBaseline='top';
+  tctx.fillText('♩=', 6, 4);
+  updateTempoReadout();
+}
+let tempoHandles=[];
+function tempoTicks(lo,hi){ const span=hi-lo; let step= span<=40?10: span<=90?20: span<=180?40:60;
+  const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi; v+=step) out.push(v); return out; }
+
+function shapeLabel(s){ return s==='exp'?'⌒ exp':'╱ linear'; }
+function updateTempoReadout(){
+  if(tempoSel.size>=1){ const pts=[...tempoSel];
+    if(pts.length===1){ const p=pts[0]; tempoReadout.textContent=`point · ♩=${Math.round(p.bpm)} @ q${(+p.at).toFixed(2)} · ${p.curve==='exp'?'exp':'linear'}`; }
+    else tempoReadout.textContent=`${pts.length} points · drag to move · ⌫ to delete`;
+    tempoDelBtn.disabled=false; tempoCurveBtn.disabled=false;
+    tempoCurveBtn.textContent=shapeLabel(pts.every(p=>p.curve==='exp')?'exp':'linear');   // toggles the selected points' outgoing shape
+  } else {
+    const meters=regions.filter(r=>mainSystem(r).kind!=='chronological').length;
+    if(!meters){ tempoReadout.textContent='no metered regions — free time has no tempo'; }
+    else { const t=view.tool;
+      tempoReadout.textContent =
+        t==='glide' ? 'glide: drag to lay a ramp' :
+        t==='pen'   ? 'pen: click to place points along the line' :
+        t==='free'  ? 'free: drag to draw a tempo contour' :
+        t==='erase' ? 'erase: click a point to remove it' :
+        t==='select'? 'select: drag points · drag a line to move both · sweep to select' :
+                      'hold: tap to place a tempo point'; }
+    tempoDelBtn.disabled=true;
+    tempoCurveBtn.disabled=false; tempoCurveBtn.textContent=shapeLabel(tempoShape);   // sets the shape new points deposit with
+  }
+  if(typeof syncPointEditor==='function') syncPointEditor();   // ♩= entry tracks the tempo selection
+}
+
+/* ---- interaction ---- */
+function tempoEvtSec(e){ const rr=tempoCv.getBoundingClientRect(); return xToSec(e.clientX-rr.left); }
+function tempoEvtY(e){ const rr=tempoCv.getBoundingClientRect(); return e.clientY-rr.top; }
+function tempoHitHandle(x,y){
+  let best=null,bd=TEMPO_HIT*TEMPO_HIT;
+  for(const h of tempoHandles){ const dx=h.x-x, dy=h.y-y, d=dx*dx+dy*dy; if(d<=bd){ bd=d; best=h; } }
+  return best;
+}
+/* ---- tempo edit model — kept pure so it's Node-provable. Moves recompute from a
+   drag-start snapshot (idempotent across pointermove), quarters in/out; the canvas does
+   screen↔model + snapping. A SEGMENT move is just a group move of its two endpoints. ---- */
+function tempoPointRegion(p){ for(const r of regions){ const m=mainSystem(r);
+  if(Array.isArray(m.tempo) && m.tempo.indexOf(p)>=0) return {r,m}; } return null; }
+// snapshot the regions touched by a selection: original at/bpm + selected flags, sorted.
+function tempoMakeDrag(pts){
+  const sel=new Set(pts), regs=new Map();
+  for(const p of pts){ const rr=tempoPointRegion(p); if(rr) regs.set(rr.m,null); }
+  for(const m of [...regs.keys()]) regs.set(m,{Q:Q_OF(m),
+    list:m.tempo.map(p=>({p,at0:p.at,bpm0:p.bpm,sel:sel.has(p)})).sort((a,b)=>a.at0-b.at0)});
+  return {sel:[...pts], regs};
+}
+// apply a rigid (dQ quarters, dBpm) from the snapshot: clamp so no selected point leaves
+// [0,Q] or crosses an UNSELECTED neighbor (touching — a jump — allowed). Rigid in both axes.
+function tempoGroupApply(drag, dQ, dBpm){
+  let loQ=-Infinity,hiQ=Infinity, loB=-Infinity,hiB=Infinity;
+  for(const {Q,list} of drag.regs.values())
+    for(let i=0;i<list.length;i++){ if(!list[i].sel) continue;
+      hiQ=Math.min(hiQ,Q-list[i].at0); loQ=Math.max(loQ,-list[i].at0);
+      if(i+1<list.length && !list[i+1].sel) hiQ=Math.min(hiQ,list[i+1].at0-list[i].at0);
+      if(i-1>=0          && !list[i-1].sel) loQ=Math.max(loQ,list[i-1].at0-list[i].at0);
+      hiB=Math.min(hiB,TEMPO_BPM_MAX-list[i].bpm0); loB=Math.max(loB,TEMPO_BPM_MIN-list[i].bpm0);
+    }
+  const dq=Math.max(loQ,Math.min(hiQ,dQ||0)), db=Math.max(loB,Math.min(hiB,dBpm||0));
+  for(const {list} of drag.regs.values()) for(const it of list){ if(it.sel){ it.p.at=it.at0+dq; it.p.bpm=it.bpm0+db; } }
+  return {dq,db};
+}
+// delete a set of points across regions; drop empty arrays. the floor invariant restores ≥1.
+function tempoDeleteSet(sel){ for(const p of sel){ const rr=tempoPointRegion(p); if(!rr) continue;
+  const arr=rr.m.tempo, k=arr.indexOf(p); if(k>=0) arr.splice(k,1); if(!arr.length) delete rr.m.tempo; } }
+let tempoDrag=null;   // {snap,grabReg,sx,sy,sQ} while moving points; null otherwise
+function tempoSecToQ(sec, reg){ const m=mainSystem(reg); return clampToRegionQ(beatToQ(secToBeatIn(sec,reg),m), m); }
+function _ptSegDist(px,py,x1,y1,x2,y2){ const dx=x2-x1,dy=y2-y1,L=dx*dx+dy*dy||1;
+  let t=((px-x1)*dx+(py-y1)*dy)/L; t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx), py-(y1+t*dy)); }
+// nearest segment between two consecutive real points in the SAME region → {r,a,b} or null
+function tempoHitSeg(x,y){ let best=null,bd=TEMPO_HIT;
+  for(let i=0;i+1<tempoHandles.length;i++){ const a=tempoHandles[i], b=tempoHandles[i+1];
+    if(a.m!==b.m||!a.p||!b.p) continue; const d=_ptSegDist(x,y,a.x,a.y,b.x,b.y);
+    if(d<bd){ bd=d; best={r:a.r,a:a.p,b:b.p}; } }
+  return best; }
+function startTempoMove(pts, grabReg, x, y, sec){
+  tempoDrag={ snap:tempoMakeDrag(pts), grabReg, sx:x, sy:y, sQ:tempoSecToQ(snapSecToChart(sec),grabReg) }; }
+
+tempoCv.addEventListener('pointerdown',e=>{
+  if(!tempoOpen) return;
+  const tool=view.tool; if(tool==='pan'||tool==='slice') return;          // those gestures live on the roll
+  tempoCv.setPointerCapture(e.pointerId);
+  pointSel=null;   // touching the lane hands the ♩=/Hz editor to tempo (mutually exclusive with note-point editing)
+  const x=e.clientX-tempoCv.getBoundingClientRect().left, y=tempoEvtY(e), sec=clampSecToContent(tempoEvtSec(e));
+
+  if(tool==='erase'){ const h=tempoHitHandle(x,y); if(h&&h.p){ dragHist=histSnapshot();
+      tempoSel.delete(h.p); tempoDeleteSet([h.p]); tempoMapDirty(); changed(); commitDragHist(); } return; }
+
+  if(tool==='select'){
+    const h=tempoHitHandle(x,y);
+    if(h&&h.p){ if(!tempoSel.has(h.p)){ tempoSel.clear(); tempoSel.add(h.p); }
+      dragHist=histSnapshot(); startTempoMove([...tempoSel], h.r, x, y, sec); drawTempo(); return; }
+    const sg=tempoHitSeg(x,y);
+    if(sg){ tempoSel.clear(); tempoSel.add(sg.a); tempoSel.add(sg.b);
+      dragHist=histSnapshot(); startTempoMove([sg.a,sg.b], sg.r, x, y, sec); drawTempo(); return; }
+    tempoMarq={sx:x,sy:y,x2:x,y2:y,band:selBand}; drawTempo(); return;     // empty → sweep
+  }
+
+  // DEPOSIT — hold drops one point, glide drags a ramp, pen click-builds a path, free draws a contour
+  const reg=regionAtSec(sec), m=mainSystem(reg);
+  if(m.kind==='chronological'){ tempoSel.clear(); drawTempo(); return; }
+  const snapped=snapSecToChart(sec), at=clampToRegionQ(beatToQ(secToBeatIn(snapped,reg),m),m), bpm=clampBpm(yToBpm(y));
+
+  if(tool==='glide'){                         // press = start, drag = end → a two-point ramp
+    dragHist=histSnapshot();
+    const a={at,bpm,curve:tempoShape}, b={at,bpm,curve:tempoShape}; tempoArr(m).push(a,b);
+    tempoSel.clear(); tempoSel.add(a); tempoSel.add(b);
+    tempoDrag={mode:'glide', m, reg, a, b};
+    tempoMapDirty(); draw(); return;
+  }
+  if(tool==='free'){                          // drag = sample a contour as it advances in time
+    dragHist=histSnapshot();
+    const a={at,bpm,curve:tempoShape}; tempoArr(m).push(a);
+    tempoSel.clear(); tempoSel.add(a);
+    tempoDrag={mode:'free', m, reg, raw:[a], lastQ:at};
+    tempoMapDirty(); draw(); return;
+  }
+  if(tool==='pen'){                           // click = drop a point into the path; keep clicking to extend
+    dragHist=histSnapshot();
+    const np={at,bpm,curve:tempoShape}; tempoArr(m).push(np); applyAffectOnInsert(m,np);
+    tempoSel.clear(); tempoSel.add(np);
+    tempoMapDirty(); changed(); commitDragHist(); return;
+  }
+  // hold (default): drop one point and let it be repositioned by the same drag
+  dragHist=histSnapshot();
+  const np={at,bpm,curve:tempoShape}; tempoArr(m).push(np); applyAffectOnInsert(m,np);
+  tempoSel.clear(); tempoSel.add(np);
+  startTempoMove([np], reg, x, y, sec);
+  tempoMapDirty(); draw();
+});
+tempoCv.addEventListener('pointermove',e=>{
+  if(tempoMarq){ tempoMarq.x2=e.clientX-tempoCv.getBoundingClientRect().left; tempoMarq.y2=tempoEvtY(e); drawTempo(); return; }
+  if(!tempoDrag) return;
+  const curSec=clampSecToContent(tempoEvtSec(e)), curY=tempoEvtY(e), snapped=snapSecToChart(curSec);
+  if(tempoDrag.mode==='glide'){                          // the end-point tracks the cursor (sort on commit orders the ramp)
+    tempoDrag.b.at=clampToRegionQ(beatToQ(secToBeatIn(snapped,tempoDrag.reg),tempoDrag.m), tempoDrag.m);
+    tempoDrag.b.bpm=clampBpm(yToBpm(curY));
+    tempoMapDirty(); refreshPitchHangs(); draw(); return;
+  }
+  if(tempoDrag.mode==='free'){                           // drop a fresh point whenever we advance to a new grid cell
+    const q=clampToRegionQ(beatToQ(secToBeatIn(snapped,tempoDrag.reg),tempoDrag.m), tempoDrag.m);
+    if(q > tempoDrag.lastQ+1e-6){ const np={at:q,bpm:clampBpm(yToBpm(curY)),curve:tempoShape};
+      tempoArr(tempoDrag.m).push(np); tempoDrag.raw.push(np); tempoSel.add(np); tempoDrag.lastQ=q; }
+    tempoMapDirty(); refreshPitchHangs(); draw(); return;
+  }
+  if(!tempoDrag.snap) return;
+  const dQ=tempoSecToQ(snapped, tempoDrag.grabReg) - tempoDrag.sQ;   // grid-snapped cursor motion in quarters
+  const dBpm=yToBpm(curY)-yToBpm(tempoDrag.sy);
+  tempoGroupApply(tempoDrag.snap, dQ, dBpm);
+  tempoMapDirty(); refreshPitchHangs(); draw();   // notes, extent, and pitch markers all follow the re-time live
+});
+function commitTempoMarq(){
+  const M=tempoMarq; const x0=Math.min(M.sx,M.x2),x1=Math.max(M.sx,M.x2),y0=Math.min(M.sy,M.y2),y1=Math.max(M.sy,M.y2);
+  const sweptX=x1-x0, sweptY=y1-y0, band=M.band;
+  if(band==='box'       && sweptX<3 && sweptY<3){ tempoSel.clear(); return; }
+  if(band==='vertical'   && sweptX<3){ tempoSel.clear(); return; }
+  if(band==='horizontal' && sweptY<3){ tempoSel.clear(); return; }
+  tempoSel.clear();
+  if(band==='region'){                                   // whole region(s) the sweep touches
+    for(const reg of regions){ const m=mainSystem(reg); if(m.kind==='chronological'||!(m.tempo&&m.tempo.length)) continue;
+      const rs=secToX(regionStartSec(reg)), re=secToX(regionStartSec(reg)+regionSecLen(reg));
+      if(re>=x0 && rs<=x1) for(const p of m.tempo) tempoSel.add(p); }
+    return; }
+  for(const h of tempoHandles){ if(!h.p) continue;
+    const inX=(band==='horizontal')||(h.x>=x0&&h.x<=x1), inY=(band==='vertical')||(h.y>=y0&&h.y<=y1);
+    if(inX&&inY) tempoSel.add(h.p); }
+}
+function endTempoDrag(){
+  if(tempoMarq){ commitTempoMarq(); tempoMarq=null; updateTempoReadout(); drawTempo(); return; }
+  if(!tempoDrag) return;
+  if(tempoDrag.mode==='glide'){                          // a glide that never moved collapses to a single held point
+    const a=tempoDrag.a, b=tempoDrag.b, arr=tempoDrag.m.tempo;
+    if(Math.abs(a.at-b.at)<1e-6 && Math.abs(a.bpm-b.bpm)<1e-6){ const k=arr.indexOf(b); if(k>=0) arr.splice(k,1); tempoSel.delete(b); }
+  }
+  const touched = tempoDrag.snap ? [...tempoDrag.snap.regs.keys()] : (tempoDrag.m ? [tempoDrag.m] : []);
+  for(const m of touched) if(Array.isArray(m.tempo)) m.tempo.sort((a,b)=>a.at-b.at);   // stable: coincident order kept
+  tempoDrag=null; tempoMapDirty(); changed(); commitDragHist();
+}
+tempoCv.addEventListener('pointerup',endTempoDrag);
+tempoCv.addEventListener('pointercancel',endTempoDrag);
+
+function clampBpm(v){ return Math.max(TEMPO_BPM_MIN,Math.min(TEMPO_BPM_MAX,v)); }
+function clampToRegionQ(q,m){ return Math.max(0,Math.min(Q_OF(m),q)); }
+function tempoDeleteSelection(){ if(!tempoSel.size) return;
+  dragHist=histSnapshot(); tempoDeleteSet([...tempoSel]); tempoSel.clear(); tempoMapDirty(); changed(); commitDragHist(); }
+
+/* ---- header controls ---- */
+function setTempoOpen(v){ tempoOpen=v; tempoPanel.classList.toggle('tcollapsed',!v);
+  tempoToggle.textContent= v?'田 tempo ▾':'田 tempo ▸'; if(v){ resize(); drawTempo(); } }
+tempoToggle.addEventListener('click',()=>setTempoOpen(!tempoOpen));
+tempoCurveBtn.addEventListener('click',()=>{
+  if(tempoSel.size){ const pts=[...tempoSel]; const target=pts.every(p=>p.curve==='exp')?'linear':'exp';
+    dragHist=histSnapshot(); for(const p of pts) p.curve=target; tempoMapDirty(); changed(); commitDragHist(); }
+  else { tempoShape = tempoShape==='exp'?'linear':'exp'; updateTempoReadout(); drawTempo(); }
+});
+tempoAffectBtn.addEventListener('click',()=>{
+  const i=TEMPO_AFFECT_ORDER.indexOf(tempoAffect); tempoAffect=TEMPO_AFFECT_ORDER[(i+1)%TEMPO_AFFECT_ORDER.length];
+  tempoAffectBtn.textContent=TEMPO_AFFECT_LABEL[tempoAffect];
+});
+tempoAffectBtn.textContent=TEMPO_AFFECT_LABEL[tempoAffect];
+tempoDelBtn.addEventListener('click',tempoDeleteSelection);
+
+/* ---- resize the lane by dragging the grip ---- */
+let tempoResize=null;
+tempoGrip.addEventListener('pointerdown',e=>{ if(!tempoOpen) return; tempoGrip.setPointerCapture(e.pointerId);
+  const h0=parseFloat(getComputedStyle(tempoPanel).getPropertyValue('--tempoH'))||120;
+  tempoResize={y0:e.clientY,h0}; e.stopPropagation(); });
+tempoGrip.addEventListener('pointermove',e=>{ if(!tempoResize) return;
+  const dh=tempoResize.y0-e.clientY; const h=Math.max(64,Math.min(320,tempoResize.h0+dh));
+  tempoPanel.style.setProperty('--tempoH',h+'px'); resize(); drawTempo(); });
+tempoGrip.addEventListener('pointerup',()=>{ tempoResize=null; });
+tempoGrip.addEventListener('pointercancel',()=>{ tempoResize=null; });
+tempoToggle.textContent='田 tempo ▸'; updateTempoReadout();   // collapsed at start
+
+/* ============================================================
    IMPORT / EXPORT
    ============================================================ */
 const impBtn=document.getElementById('impMidi'), impFile=document.getElementById('impFile');
@@ -2685,23 +3314,39 @@ impFile.onchange=async()=>{
 };
 
 /* ---- export timeline: the region tiling rendered as one MIDI tick line ----
-   Metric region: 1 unit = 1 quarter at the region's bpm. Chronological region:
-   1 second = 1 quarter at tempo 60, time-signature 1/4 (one bar per second — the
-   same seconds-only grid the Roll shows). Absolute seconds <-> quarters is piecewise
-   linear, so notes and bend curves keep the score's honest timing even though MIDI
-   must think in beats. The .mid stays a shadow; the timeline is the translation. */
+   Now driven by the tempo map. Each metered SQUARE segment is one constant-tempo
+   chunk (exact). A LINEAR ramp is approximated by N stepped sub-chunks: the cut
+   points come from the integrator (_segSecPart), so the (quarter, second) pairs at
+   every boundary are EXACT, and each chunk's tempo is set to ups·60 where ups=dq/ds
+   — the constant tempo that reproduces that chunk's timing, so MIDI's own
+   constant-tempo interpolation agrees with the curve at every boundary (only the
+   interior of a ramp is linearised, vanishing as steps rise). A chronological region
+   stays one second = one quarter at ♩=60, time-signature 1/4 (the Roll's seconds grid).
+   The .mid is a shadow; the timeline is the translation. */
+const TEMPO_RAMP_STEPS=24;
 function nearestPow2Den(d){ return Math.pow(2,Math.max(0,Math.min(6,Math.round(Math.log2(Math.max(0.5,+d||4)))))); }   // MIDI's sig vocabulary — the .jpeg approximates
 function exportTimeline(){
   ensureRegions();
-  const segs=[]; let q=0, s=0;
-  for(const r of regions){ const m=mainSystem(r), len=regionSecLen(r);
-    const qps = m.kind==='chronological'?1:(m.bpm||120)/60;            // MIDI ticks think in QUARTERS, whatever the region's unit
-    segs.push({q, s, ups:qps,
-      bpm: m.kind==='chronological'?60:(m.bpm||120),
-      sigNum: m.kind==='chronological'?1:Math.max(1,Math.round(m.sigNum||4)),
-      sigDen: m.kind==='chronological'?4:nearestPow2Den(m.sigDen)});
-    q+=len*qps; s+=len;
+  const t=tmap(); const segs=[]; let q=0;            // q = GLOBAL quarters across the whole score
+  const push=(s,ups,bpm,sigNum,sigDen)=>segs.push({q,s,ups,bpm,sigNum,sigDen});
+  for(const g of t.segs){
+    if(g.chrono){ const ds=g.sec1-g.sec0; push(g.sec0,1,60,1,4); q+=ds*1; continue; }
+    const r=regionById(g.region), m=mainSystem(r);
+    const sn=Math.max(1,Math.round(m.sigNum||4)), sd=nearestPow2Den(m.sigDen);
+    const dq=g.q1-g.q0, ds=g.sec1-g.sec0;
+    if(dq<=1e-12||ds<=1e-12) continue;
+    if(g.curve!=='linear'||Math.abs(g.bpm1-g.bpm0)<1e-9){
+      const ups=dq/ds; push(g.sec0,ups,ups*60,sn,sd); q+=dq;                 // square: one exact chunk
+    } else {
+      for(let k=0;k<TEMPO_RAMP_STEPS;k++){                                    // ramp: exact cuts, stepped tempo
+        const qa=dq*k/TEMPO_RAMP_STEPS, qc=dq*(k+1)/TEMPO_RAMP_STEPS;
+        const sa=_segSecPart(qa,dq,g.bpm0,g.bpm1,'linear'), sc=_segSecPart(qc,dq,g.bpm0,g.bpm1,'linear');
+        const subDq=qc-qa, subDs=sc-sa; if(subDs<=1e-12) continue;
+        const ups=subDq/subDs; push(g.sec0+sa,ups,ups*60,sn,sd); q+=subDq;
+      }
+    }
   }
+  if(!segs.length) segs.push({q:0,s:0,ups:(settings.bpm||120)/60,bpm:settings.bpm||120,sigNum:settings.sigNum||4,sigDen:nearestPow2Den(settings.sigDen)});
   return segs;
 }
 function qAtSecOn(segs,sec){ let g=segs[0]; for(const x of segs){ if(x.s<=sec+1e-9) g=x; else break; } return g.q+(sec-g.s)*g.ups; }
@@ -2787,9 +3432,15 @@ document.getElementById('expJson').onclick=()=>{
       temporalSettings:{ beats, bpm:m.bpm, timeSignature:(m.sigNum||4)+'/'+(m.sigDen||4) },
       axis:'frequency', axisSettings:{ a4:m.a4 } };
     if(m.offset) frame.temporalSettings.offset=m.offset;
-    return { id:r.id, role:'regime', frame,
-      payload:{ voices, midiExport:{ rule:'monophonic-per-voice', voiceToChannel:'voice N → base channel + (N-1)', bendRange:settings.range } },
-      events: rNotes.map(noteEvent) };
+    const payload={ voices, midiExport:{ rule:'monophonic-per-voice', voiceToChannel:'voice N → base channel + (N-1)', bendRange:settings.range } };
+    // tempo curve rides in payload (chart-model §12): region-local points, `at` in
+    // quarters from the region start, `curve` names the segment after the point.
+    // Absent ⇒ the frame's flat bpm (a reader may ignore this and get today's score).
+    if(m.kind!=='chronological' && Array.isArray(m.tempo) && m.tempo.length){
+      payload.tempo={ unit:'quarter', points:m.tempo.slice().sort((a,b)=>a.at-b.at)
+        .map(p=>({ at:+(+p.at).toFixed(4), bpm:+(+p.bpm).toFixed(3), curve:p.curve||'square' })) };
+    }
+    return { id:r.id, role:'regime', frame, payload, events: rNotes.map(noteEvent) };
   }).filter(s=>s.events.length || regions.length===1);
   const doc={ projectName:'TabotaRoll', languageVersion:'2.0', metadata:{ profile:'determinate' }, score };
   download(new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),'tabota-roll.json');
@@ -2864,10 +3515,13 @@ function _notesFromV2(doc){
   const R = TR.resolve(doc);
 
   // master tempo / time-sig / tuning / bend — from the first metered + pitched frame in the doc
-  let mBpm=null,mNum=null,mDen=null,mA4=null,bend=null;
+  let mBpm=null,mNum=null,mDen=null,mA4=null,bend=null,mTempo=null;
   (function scan(list){ (list||[]).forEach(e=>{ if(!e||typeof e!=='object') return;
     const f=e.frame||{}, ts=f.temporalSettings||{}, as=f.axisSettings||{};
-    if(f.temporal==='metered' && ts.bpm!=null && mBpm==null) mBpm=+ts.bpm;
+    if(f.temporal==='metered' && ts.bpm!=null && mBpm==null){ mBpm=+ts.bpm;
+      // the tempo curve rides in payload (chart-model §12) — grab it from the same
+      // frame that anchors the master bpm so units stay coherent
+      if(e.payload && e.payload.tempo && Array.isArray(e.payload.tempo.points)) mTempo=e.payload.tempo.points; }
     if(f.temporal==='metered' && ts.timeSignature && mNum==null){ const p=String(ts.timeSignature).split('/'); mNum=+p[0]||4; mDen=+p[1]||4; }
     if((f.axis==='frequency'||f.axis==='symbolic') && as.a4!=null && mA4==null) mA4=+as.a4;
     if(e.payload && e.payload.midiExport && e.payload.midiExport.bendRange) bend=+e.payload.midiExport.bendRange;
@@ -2909,7 +3563,7 @@ function _notesFromV2(doc){
     if(type==='glide' && ncurve) note.curve=ncurve;
     out.push(note);
   }
-  return {notes:out, bpm:masterBpm, sig:[sigNum_,sigDen_], a4:masterA4, skipped, bend};
+  return {notes:out, bpm:masterBpm, sig:[sigNum_,sigDen_], a4:masterA4, skipped, bend, tempo:mTempo};
 }
 function _hasV2Shape(list){
   return Array.isArray(list) && list.some(ev=> ev && (ev.frame || ev.value || ev.position || ev.ref));
@@ -2932,6 +3586,15 @@ impJsonFile.onchange=async()=>{
   if(res.sig){ sigNum.value=res.sig[0]||4; sigDen.value=res.sig[1]||4; }
   a4.value=res.a4; if(res.bend){ bendRange.value=res.bend; }
   regions=[makeRegion()]; regions[0].name='Imported'; activeRegionId=regions[0].id; renderRegionTabs();   // fresh region from the imported frame; notes tag to it via normalizeNotes
+  // single-region docs round-trip losslessly: notes recover their beats through the flat
+  // resolver, so re-attaching the curve reproduces the original seconds exactly. multi-region
+  // docs are flattened (a known Roll-import limitation), so the per-region curve is dropped there.
+  if(res.tempo && res.tempo.length && Array.isArray(doc.score) && doc.score.length===1){
+    const m=mainSystem(regions[0]);
+    m.tempo=res.tempo.slice().sort((a,b)=>(+a.at||0)-(+b.at||0))
+      .map(p=>({at:Math.max(0,+p.at||0), bpm:+p.bpm||m.bpm, curve:p.curve==='linear'?'linear':'square'}));
+    tempoMapDirty();
+  }
   NID=Math.max(NID,0,...notes.map(n=>n.id))+1;
   const maxB=Math.max(0,...notes.map(n=>n.start+n.dur));
   bars.value=Math.max(1, Math.ceil((maxB+0.5)/Math.max(1,settings.sigNum)));
