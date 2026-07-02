@@ -776,8 +776,7 @@ function newRegionId(){ return 'r'+(REGID++); }
 function makeRegion(){            // built from the current live frame controls
   return { id:newRegionId(), name:null, notes:[], main:'m', systems:[ { id:'m', kind:'metered',
            bpm:settings.bpm, sigNum:settings.sigNum, sigDen:settings.sigDen,
-           a4:settings.a4, bars:settings.bars, offset:0, axis:'frequency',
-           cycleId:activeCycleId, cycDepth:cycDepthVal() } ] };   // cycla is per-region now (Stage 2)
+           a4:settings.a4, bars:settings.bars, offset:0, axis:'frequency' } ] };
 }
 let regions=[], activeRegionId=null;
 function ensureRegions(){ if(!regions.length){ const r=makeRegion(); r.name='Region 1'; regions=[r]; activeRegionId=r.id; } }
@@ -787,15 +786,11 @@ function syncRegionFromControls(){          // DOM -> active region's main syste
   tempoMapDirty();
   const m=mainSystem(); if(!m) return;
   m.bpm=settings.bpm; m.sigNum=settings.sigNum; m.sigDen=settings.sigDen; m.a4=settings.a4; m.bars=settings.bars;
-  m.cycleId=activeCycleId; m.cycDepth=cycDepthVal();      // cycla travels with the region (Stage 2)
 }
 function applyRegionToControls(r){          // active region's main -> DOM (import / tab switch)
   const m=mainSystem(r); if(!m) return;
   bpm.value=Math.round(m.bpm); sigNum.value=m.sigNum||4; sigDen.value=m.sigDen||4; a4.value=m.a4||440;
   if(m.bars) bars.value=m.bars;
-  if(m.cycleId && CYCLES[m.cycleId]){ activeCycleId=m.cycleId; activeCycle=CYCLES[m.cycleId];   // restore the region's cycla
-    if(typeof cycleSel!=='undefined') cycleSel.value=m.cycleId; }
-  if(m.cycDepth && typeof cycDepth!=='undefined') cycDepth.value=m.cycDepth;
   if(typeof refreshSigUI==='function') refreshSigUI();
 }
 function normalizeNotes(){                   // every note belongs to the active region & hangs on its main
@@ -994,15 +989,9 @@ function moveBoundary(i, newBoundarySec){
   const hangPre=new Map();   // pre-resize absolute seconds of every hang pointing at either region
   for(const n of notes){ if(n.end&&(n.end.region===left.id||n.end.region===right.id)){
     const er=regionById(n.end.region); hangPre.set(n, beatToSecIn(n.end.beat, er)); } }
-  // resize both regions to meet at the new boundary — bars are the METRIC CONTENT the new
-  // second-span holds under each region's OWN tempo curve (read the CURRENT map before dirtying).
-  // NB: tempo points stay anchored at each region's start; re-anchoring the RIGHT region's curve
-  // when its start moves (a leading interior ramp shrunk/grown from the left) is the splitTempo
-  // seam, DEFERRED to the region-tool phase. Flat/borrowed/trailing-ramp cases are exact.
-  lm.bars = (lm.kind==='chronological') ? Math.max(1e-4, newBoundarySec-leftStart)
-          : Math.max(1e-4, secToBeatIn(newBoundarySec, left)/(lm.sigNum||4));
-  rm.bars = (rm.kind==='chronological') ? Math.max(1e-4, rightEnd-newBoundarySec)
-          : Math.max(1e-4, (secToBeatIn(rightEnd, right)-secToBeatIn(newBoundarySec, right))/(rm.sigNum||4));
+  // resize both regions to meet at the new boundary
+  lm.bars = (newBoundarySec-leftStart)/regUnitSec(lm);
+  rm.bars = (rightEnd-newBoundarySec)/regUnitSec(rm);
   tempoMapDirty();                          // extents just changed; re-derive note coords against the fresh map
   // reassign each note to whichever region now owns its onset; recompute local beats AND duration (seconds conserved)
   for(const {n,sec,endSec} of aff){
@@ -1332,13 +1321,14 @@ function upsOf(r){ return unitsPerSec(mainSystem(r)); }
 function pxPerBeatIn(r){ return view.pxPerSec/upsOf(r); }
 function xToBeatIn(x,r){ return secToBeatIn(xToSec(x), r); }
 function clampSecToContent(sec){ return Math.max(0,Math.min(totalSec(),sec)); }
-/* differential snap: snap an absolute second to the grid of whichever region owns that second.
-   ONE path for every region now (Stage 2) — snapBeat reads the region's OWN cycla; no active/
-   non-active asymmetry. Curve-aware back-conversion lands the snap on the DRAWN gridline. */
+/* differential snap: snap an absolute second to the grid of whichever region owns that second */
 function snapSecToChart(sec){
   if(!settings.snapTime) return sec;
-  const r=regionAtSec(sec);
-  return beatToSecIn(snapBeat(secToBeatIn(sec, r), r), r);   // one source; THE GRID LAW
+  const r=regionAtSec(sec), m=mainSystem(r), s0=regionStartSec(r);
+  const local=secToBeatIn(sec, r);
+  const snapped = (r.id===activeRegionId) ? snapBeat(local)                       // active region keeps its cycle-aware snap
+    : (m.kind==='chronological' ? Math.round(local) : Math.round(local/gridStepUnits(m))*gridStepUnits(m));
+  return s0+snapped/unitsPerSec(m);
 }
 /* cursor x -> beat in region r's chart, snapped to the chart under the cursor, clamped to content */
 function xToBeatSnappedIn(x,r){ return secToBeatIn(clampSecToContent(snapSecToChart(clampSecToContent(xToSec(x)))), r); }
@@ -1363,33 +1353,18 @@ function clampScroll(){
    Chronological keeps the old 1/div as a fine fraction of a second (snap there is whole seconds). */
 function gridStepUnits(m){ m=m||mainSystem(); const div=settings.grid||4;
   return m.kind==='chronological' ? 1/div : (m.sigDen||4)/div; }
-/* ---- Stage 2: cycla is the SOLE grammar; the even grid is a TRIVIAL cycla (isochronous).
-   regionBarGrid(r) is THE single per-bar source consumed by BOTH the renderer (drawAllGrids,
-   drawTempoGrid) and the snapper (snapBeat) — so snap targets ARE the drawn gridlines by
-   construction (THE GRID LAW is structural, not merely coincident). ---- */
-function regionCycle(r){ const m=mainSystem(r); let c=CYCLES[m.cycleId]||CYCLES['even'];
-  if(c && c.kind==='grammar' && !c.grammar){ try{ c.grammar=parseCyc2(c.src); }catch(e){ c=CYCLES['even']; } }
-  return c; }
-function regionCycDepth(r){ const m=mainSystem(r); return Math.max(1,Math.min(7, m.cycDepth||cycDepthVal())); }
-// phases in [0,1) with render levels (0 bar · 1 beat/onset · 2 subdivision)
-function regionBarGrid(r){
-  const m=mainSystem(r), cyc=regionCycle(r), bpb=(m.sigNum||4);
-  if(cyc && !cyc.isEven) return {bpb, phases:cycleBoundaries(cyc, regionCycDepth(r))};
-  const step=gridStepUnits(m), phases=[];
-  for(let u=0; u<bpb-1e-9; u+=step){ const lvl = u<1e-9?0 : (Math.abs(u-Math.round(u))<1e-6?1:2); phases.push({phase:u/bpb, level:lvl}); }
-  return {bpb, phases};
-}
-function snapBeat(b, r){
-  r=r||activeRegion();
+function snapBeat(b){
   if(!settings.snapTime) return b;
-  const m=mainSystem(r);
-  if(m.kind==='chronological') return Math.round(b);                     // free time: whole seconds, never a 4/4
-  const g=regionBarGrid(r), bpb=g.bpb;
-  const bar=Math.floor(b/bpb), frac=(b/bpb)-bar;                         // phase within the bar
-  let best=g.phases[0].phase, bd=Math.abs(frac-best);
-  for(const p of g.phases){ const dd=Math.abs(frac-p.phase); if(dd<bd){bd=dd; best=p.phase;} }
-  if(Math.abs(frac-1)<bd) best=1;                                        // bar-end candidate
-  return (bar+best)*bpb;
+  if(mainSystem().kind==='chronological') return Math.round(b);   // free time: snap to whole seconds, never a 4/4
+  if(view.timeRegime==='meter' && activeCycle && !activeCycle.isEven){   // snap to cycle phases (per bar)
+    const bpb=settings.sigNum;
+    const bar=Math.floor(b/bpb), frac=(b/bpb)-bar;                       // phase within the bar/cycle
+    const cands=cycleBoundaries(activeCycle, cycDepthVal()).map(x=>x.phase).concat([1]);
+    let best=cands[0], bd=Math.abs(frac-cands[0]);
+    for(const c of cands){ const dd=Math.abs(frac-c); if(dd<bd){bd=dd; best=c;} }
+    return (bar+best)*bpb;
+  }
+  const step=gridStepUnits(mainSystem()); return Math.round(b/step)*step;
 }
 function scaleRootHz(){ return midiToFreq(scaleRootMidi,settings.a4); }
 function snapToScale(hz,sc){
@@ -1527,8 +1502,65 @@ function drawPitchGridSpan(p,x0,x1,H){
   }
 }
 
-/* (drawTimeGrid removed — Stage 2. It was dead code, the sole cycla-phase renderer,
-   orphaned by the region build; drawAllGrids now renders every region's own cycla.) */
+function drawTimeGrid(W,H){
+  ctx.save(); ctx.beginPath(); ctx.rect(GUT_L,GUT_T,W-GUT_L,H-GUT_T); ctx.clip();
+  const bpb=settings.sigNum; const tb=totalBeats();
+  if(view.timeRegime==='meter' && activeCycle && !activeCycle.isEven){
+    // cycle grid: boundaries repeated each bar, line weight by metric level (indispensability).
+    const bnd=cycleBoundaries(activeCycle, cycDepthVal());                // [{phase, level}], includes phase 0 @ L0
+    const firstBar=Math.max(0,Math.floor(xToBeat(GUT_L)/bpb)), lastBar=Math.min(settings.bars,Math.ceil(xToBeat(W)/bpb));
+    const dense = view.pxPerBeat*bpb/Math.max(1,bnd.length) < 5;          // hide deep onsets when cramped
+    for(let bar=firstBar; bar<settings.bars && bar<=lastBar; bar++){
+      for(const o of bnd){
+        if(o.phase<=0) continue;                                          // phase 0 drawn as a boundary below
+        if(dense && o.level>1) continue;
+        const x=beatToX((bar+o.phase)*bpb);
+        const a = o.level===1 ? 0.20 : Math.max(0.07, 0.20 - (o.level-1)*0.05);
+        ctx.strokeStyle=`rgba(40,82,76,${a})`; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+      }
+    }
+    ctx.strokeStyle='rgba(17,137,126,0.40)'; ctx.lineWidth=1.4;           // L0 — cycle/bar boundaries
+    for(let bar=firstBar; bar<=lastBar; bar++){ const x=beatToX(bar*bpb);
+      ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
+  } else if(view.timeRegime==='meter'){
+    const step=gridStepUnits(mainSystem());
+    const firstB=Math.floor(xToBeat(GUT_L)), lastB=Math.ceil(xToBeat(W));
+    // subdivisions (only when finer than the unit lines)
+    if(step<0.999 && view.pxPerBeat*step>=6){
+      ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
+      for(let b=Math.floor(firstB/step)*step; b<=lastB; b+=step){
+        const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+      }
+    }
+    ctx.strokeStyle='rgba(40,82,76,0.16)'; ctx.lineWidth=1;            // unit lines — one per 1/sigDen note
+    for(let b=Math.max(0,firstB); b<=Math.min(tb,lastB); b++){
+      if(Math.abs(b/bpb-Math.round(b/bpb))<1e-6) continue;             // bar lines drawn below (bpb may be fractional)
+      const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(17,137,126,0.40)'; ctx.lineWidth=1.4;        // bar lines at k·bpb — fractional numerators welcome
+    for(let k=Math.max(0,Math.floor(firstB/bpb)); k*bpb<=Math.min(tb,lastB)+1e-9; k++){
+      const x=beatToX(k*bpb); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+    }
+  } else {
+    const spb=1/unitsPerSec(mainSystem()); const totalSec=tb*spb;
+    const firstS=Math.floor(xToBeat(GUT_L)*spb), lastS=Math.ceil(xToBeat(W)*spb);
+    // choose nice second-grid
+    let step=1; const pxPerSec=view.pxPerBeat/spb;
+    if(pxPerSec<40) step=Math.pow(10,Math.ceil(Math.log10(40/pxPerSec)));
+    const fine=step/ (pxPerSec*step>240?10:4);
+    ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
+    if(pxPerSec*fine>=6) for(let s=Math.max(0,Math.floor(firstS/fine)*fine); s<=Math.min(totalSec,lastS); s+=fine){
+      const x=beatToX(s/spb); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+    }
+    for(let s=Math.max(0,Math.floor(firstS/step)*step); s<=Math.min(totalSec,lastS); s+=step){
+      const x=beatToX(s/spb);
+      ctx.strokeStyle='rgba(17,137,126,0.34)'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
 
 function drawAllGrids(W,H){
   ensureRegions();
@@ -1545,21 +1577,15 @@ function drawAllGrids(W,H){
       ctx.strokeStyle='rgba(17,137,126,0.30)'; ctx.lineWidth=1;
       for(let s=0;s<=len+1e-6;s+=step){ const x=secToX(s0+s); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
     } else {
-      // metered: draw the region's OWN cycla grid (even = trivial cycla). regionBarGrid is the
-      // SAME source snapBeat reads, so every drawn line is a snap target and vice-versa.
-      const g=regionBarGrid(r), bpb=g.bpb, barsN=Math.ceil((m.bars||settings.bars)-1e-9);
-      const dense = (pxPerBeatIn(r)*bpb)/Math.max(1,g.phases.length) < 5;   // hide deep onsets when cramped
-      const line=(beat,style,lw)=>{ ctx.strokeStyle=style; ctx.lineWidth=lw; const x=beatToX(beat);
-        ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); };
-      for(let bar=0; bar<barsN; bar++){
-        for(const p of g.phases){ if(p.phase<=0) continue;              // phase 0 = bar line, drawn below
-          if(dense && p.level>1) continue;
-          const a = p.level>=2 ? Math.max(0.05, 0.16-(p.level-1)*0.04) : 0.16;
-          line((bar+p.phase)*bpb, `rgba(40,82,76,${a})`, 1);
-        }
-      }
-      ctx.lineWidth=1.4;                                                // bar lines (teal), incl. the end
-      for(let k=0;k<=barsN+1e-6;k++) line(k*bpb,'rgba(17,137,126,0.40)',1.4);
+      const sig=m.sigNum||4; const runits=(m.bars||settings.bars)*sig; const step=gridStepUnits(m);
+      if(step<0.999 && pxPerBeatIn(r)*step>=6){ ctx.strokeStyle='rgba(40,82,76,0.07)'; ctx.lineWidth=1;
+        for(let b=0;b<=runits+1e-6;b+=step){ const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); } }
+      ctx.strokeStyle='rgba(40,82,76,0.16)'; ctx.lineWidth=1;          // unit lines — one per 1/sigDen note
+      for(let b=0;b<=runits+1e-6;b++){ if(Math.abs(b/sig-Math.round(b/sig))<1e-6) continue;
+        const x=beatToX(b); ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
+      ctx.strokeStyle='rgba(17,137,126,0.40)'; ctx.lineWidth=1.4;      // bar lines at k·sig (sig may be fractional)
+      for(let k=0;k*sig<=runits+1e-6;k++){ const x=beatToX(k*sig);
+        ctx.beginPath(); ctx.moveTo(Math.round(x)+.5,GUT_T); ctx.lineTo(Math.round(x)+.5,H); ctx.stroke(); }
     }
     ctx.restore();
   }
@@ -1974,14 +2000,9 @@ function startGroupMove(p){
   const targets=new Map();
   for(const id of selection){ const n=notes.find(x=>x.id===id); if(n) targets.set(n, new Set(n.pts.map((_,i)=>i))); }
   for(const [n,set] of ptSel){ const ex=targets.get(n)||new Set(); for(const i of set) ex.add(i); targets.set(n,ex); }
-  const snap=new Map(); let leadSec=null, leadDx=Infinity;
-  for(const [n,set] of targets){ const home=regionById(n.region);
-    const abs=n.pts.map(q=>({beat:n.start+q.t*n.dur, hz:q.hz, curve:q.curve}));
-    snap.set(n,{sel:set, abs});
-    for(const i of set){ const aSec=beatToSecIn(abs[i].beat, home); const dx=Math.abs(secToX(aSec)-p.x);
-      if(dx<leadDx){ leadDx=dx; leadSec=aSec; } }   // leader = the selected point nearest the grab
-  }
-  return {mode:'ptMove', sx:p.x, sy:p.y, targets:snap, leadSec};
+  const snap=new Map();
+  for(const [n,set] of targets){ snap.set(n,{sel:set, abs:n.pts.map(q=>({beat:n.start+q.t*n.dur, hz:q.hz, curve:q.curve}))}); }
+  return {mode:'ptMove', sx:p.x, sy:p.y, targets:snap};
 }
 function removePoints(note,idxSet){     // returns false if the note should be removed entirely
   const abs=note.pts.map(q=>({beat:note.start+q.t*note.dur, hz:q.hz, curve:q.curve}));
@@ -2049,27 +2070,24 @@ cv.addEventListener('pointermove',e=>{
   }
   if(d.mode==='ptMove'){
     const rawDm=-(p.y-d.sy)/view.pxPerSemi;
-    const rawDs=(p.x-d.sx)/view.pxPerSec;                                         // cursor motion in SECONDS (the shared numéraire)
-    // leader-snap: the grabbed point lands on a gridline; the whole group follows by that one seconds delta
-    let dSec=(settings.snapTime && d.leadSec!=null)
-      ? snapSecToChart(clampSecToContent(d.leadSec+rawDs)) - d.leadSec
-      : rawDs;
+    const upsA=upsOf(activeRegion());
+    const rawDbA=(p.x-d.sx)/view.pxPerSec*upsA;                                   // delta in ACTIVE units, for rigid grid-snapping
+    let dSec=(settings.snapTime ? (function(){const st=gridStepUnits(mainSystem());return Math.round(rawDbA/st)*st;})() : rawDbA)/upsA;   // one seconds delta moves the whole group rigidly
     let loS=-Infinity, hiS=Infinity;
-    for(const [n,t] of d.targets){ const home=regionById(n.region), u=upsOf(home);
-      const abs=t.abs, sel=t.sel, last=abs.length-1, minStepS=(1/Math.max(settings.grid,8))/u;   // guard-only, flat is fine
+    for(const [n,t] of d.targets){ const home=regionById(n.region), u=upsOf(home), s0=regionStartSec(home);
+      const abs=t.abs, sel=t.sel, last=abs.length-1, minStepS=(1/Math.max(settings.grid,8))/u;
       for(let i=0;i<abs.length;i++){ if(!sel.has(i)) continue;
-        const aS=beatToSecIn(abs[i].beat, home);
+        const aS=s0+abs[i].beat/u;
         hiS=Math.min(hiS, totalSec()-aS); loS=Math.max(loS, -aS);
-        if(i<last && !sel.has(i+1)) hiS=Math.min(hiS, beatToSecIn(abs[i+1].beat,home)-aS-minStepS);
-        if(i>0   && !sel.has(i-1)) loS=Math.max(loS, -(aS-beatToSecIn(abs[i-1].beat,home)-minStepS));
+        if(i<last && !sel.has(i+1)) hiS=Math.min(hiS,(abs[i+1].beat-abs[i].beat)/u-minStepS);
+        if(i>0   && !sel.has(i-1)) loS=Math.max(loS,-((abs[i].beat-abs[i-1].beat)/u-minStepS));
       }
     }
     dSec=Math.max(loS,Math.min(hiS,dSec));
-    for(const [n,t] of d.targets){ const home=regionById(n.region); const abs=t.abs, sel=t.sel;
+    for(const [n,t] of d.targets){ const home=regionById(n.region), u=upsOf(home), s0=regionStartSec(home); const dB=dSec*u; const abs=t.abs, sel=t.sel;
       const na=abs.map((a,i)=>{ if(!sel.has(i)) return {beat:a.beat, hz:a.hz, curve:a.curve};
-        const nsec=beatToSecIn(a.beat, home)+dSec, nb=secToBeatIn(nsec, home);    // move rigidly in seconds, re-enter the chart
-        const hzRaw=midiToFreq(freqToMidi(a.hz,settings.a4)+rawDm,settings.a4);
-        return {beat:nb, hz:snapPitchHzAt(hzRaw, nsec), curve:a.curve}; });
+        const nb=a.beat+dB, hzRaw=midiToFreq(freqToMidi(a.hz,settings.a4)+rawDm,settings.a4);
+        return {beat:nb, hz:snapPitchHzAt(hzRaw, s0+nb/u), curve:a.curve}; });
       const start=Math.min(...na.map(q=>q.beat)), end=Math.max(...na.map(q=>q.beat)), dur=Math.max(1e-4,end-start);
       n.start=start; n.dur=dur;
       n.pts=na.map(q=>{ const o={t:(q.beat-start)/dur, hz:q.hz}; if(q.curve) o.curve=q.curve; return o; });
@@ -2077,15 +2095,13 @@ cv.addEventListener('pointermove',e=>{
     draw(); updateStatus(); return;
   }
   if(d.mode==='move'){
-    const home=regionById(d.note.region);
+    const home=regionById(d.note.region), u=upsOf(home), s0=regionStartSec(home);
     const ds=(p.x-d.sx)/view.pxPerSec, dm=-(p.y-d.sy)/view.pxPerSemi;
-    let sSec=beatToSecIn(d.o.start, home)+ds;                   // note-start in SECONDS + drag (start is the leader)
-    sSec=snapSecToChart(sSec);                                  // differential snap: the grid under the start (curve-aware)
-    // keep the metric content (dur in beats) invariant; clamp start so the note stays on content
-    const endBeat=secToBeatIn(totalSec(), home), startFloor=secToBeatIn(0, home);
-    let nStart=secToBeatIn(sSec, home);
-    nStart=Math.max(startFloor, Math.min(endBeat-d.o.dur, nStart));
-    d.note.start=nStart;                                        // stored in HOME units; deriveHang re-homes on release
+    let sSec=s0+d.o.start/u+ds;
+    sSec=snapSecToChart(sSec);                                  // differential snap: the grid under the start
+    const durSec=Math.max(d.o.dur,1e-4)/u;
+    sSec=Math.max(0,Math.min(totalSec()-durSec,sSec));
+    d.note.start=(sSec-s0)*u;                                   // stored in HOME units; deriveHang re-homes on release
     const shift=settings.snapPitch?Math.round(dm):dm;
     d.note.pts=d.o.pts.map(q=>{ const o={t:q.t, hz:midiToFreq(freqToMidi(q.hz,settings.a4)+shift,settings.a4)}; if(q.curve) o.curve=q.curve; return o; });
     draw(); updateStatus(); return;
@@ -2093,11 +2109,11 @@ cv.addEventListener('pointermove',e=>{
   if(d.mode==='segMove'){
     const n=d.note, seg=d.seg, last=d.absPts.length-1;
     const home=regionById(n.region);
-    const rawDs=(p.x-d.sx)/view.pxPerSec, rawDm=-(p.y-d.sy)/view.pxPerSemi;   // SECONDS delta (px/beat varies under a curve)
-    // proposed new absolute positions for the two endpoints — snap each in seconds, then back to home beats
+    const rawDb=(p.x-d.sx)/pxPerBeatIn(home), rawDm=-(p.y-d.sy)/view.pxPerSemi;
+    // proposed new absolute positions for the two endpoints
     const mk=(i)=>{
-      const sec=clampSecToContent(snapSecToChart(clampSecToContent(beatToSecIn(d.absPts[i].beat, home)+rawDs)));
-      let beat=clampBeatIn(secToBeatIn(sec, home), home);
+      let beat=clampBeatIn(snapBeatIn(d.absPts[i].beat+rawDb,home),home);
+      const sec=beatToSecIn(beat, home);
       let hz=snapPitchHzAt(midiToFreq(freqToMidi(d.absPts[i].hz,settings.a4)+rawDm,settings.a4), sec);
       return {beat,hz,curve:d.absPts[i].curve};
     };
@@ -3084,16 +3100,13 @@ function drawTempoGrid(W,H){
     _ctxRegion=r;
     tctx.save(); const cx0=Math.max(GUT_L,x0), cx1=Math.min(W,x1);
     tctx.beginPath(); tctx.rect(cx0,0,Math.max(0,cx1-cx0),H); tctx.clip();
-    const g=regionBarGrid(r), bpb=g.bpb, barsN=Math.ceil((m.bars||settings.bars)-1e-9);   // SAME source as snap + roll grid
-    const dense=(pxPerBeatIn(r)*bpb)/Math.max(1,g.phases.length) < 5;
-    tctx.lineWidth=1;
-    for(let bar=0; bar<barsN; bar++){
-      for(const p of g.phases){ if(p.phase<=0) continue; if(dense && p.level>1) continue;
-        tctx.strokeStyle = p.level>=2 ? 'rgba(40,82,76,0.05)' : 'rgba(40,82,76,0.11)';
-        lineAt(beatToX((bar+p.phase)*bpb)); }
-    }
-    tctx.strokeStyle='rgba(17,137,126,0.30)'; tctx.lineWidth=1.2;                // bar lines (teal), incl. end
-    for(let k=0;k<=barsN+1e-6;k++) lineAt(beatToX(k*bpb));
+    const sig=m.sigNum||4, runits=(m.bars||settings.bars)*sig, step=gridStepUnits(m);
+    if(step<0.999 && pxPerBeatIn(r)*step>=6){ tctx.strokeStyle='rgba(40,82,76,0.05)'; tctx.lineWidth=1;
+      for(let b=0;b<=runits+1e-6;b+=step) lineAt(beatToX(b)); }                 // subdivisions
+    tctx.strokeStyle='rgba(40,82,76,0.11)'; tctx.lineWidth=1;
+    for(let b=0;b<=runits+1e-6;b++){ if(Math.abs(b/sig-Math.round(b/sig))<1e-6) continue; lineAt(beatToX(b)); }   // unit lines
+    tctx.strokeStyle='rgba(17,137,126,0.30)'; tctx.lineWidth=1.2;
+    for(let k=0;k*sig<=runits+1e-6;k++) lineAt(beatToX(k*sig));                 // bar lines (teal)
     tctx.restore();
   }
   _ctxRegion=null;

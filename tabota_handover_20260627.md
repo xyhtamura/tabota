@@ -292,14 +292,44 @@ No browser automation; the discipline that holds:
 - **Per-region cycla** (`.cyc` import per region); snap-as-order ladder.
 - **Boundary-handle ergonomics**: bigger targets; full-height grab along dividers.
 
-**The B-layer — the unification (the big one, now clearly seen):**
+**The B-layer — the unification (the big one; seam now cut into stages):**
 The cleaner seam than the tool layer is the **hang-and-edit layer shared across note,
 tempo, and pitch**: all three "hang on a region and re-time," all three interpolate by
-`shapeK`, all three want the same affect-mode and curve dropdowns. This build made the
-curve vocabulary shared and proved the three hang models are the same shape.
-*Decision: A now (native per-surface), B later* — do not half-build it. Concretely:
-- **Promote affect-mode + curve dropdowns** to a surface-agnostic control (relevant to
-  note drawing, not just tempo).
+`shapeK`, all three want the same affect/curve controls. The curve vocabulary is already
+shared; what remains is duplicated *above* the math — note and tempo each hand-implement
+the same six tools (`hold/glide/pen/free/select/erase`) and fork the controls three ways
+(`curveSel` vs `tempoCurveBtn`+`teBefore/teAfter`; affect is tempo-only). *Decision:
+in-place unification (NOT ES-module extraction yet — Binlod isn't being integrated soon),
+done in two cuts so nothing half-builds.*
+
+**THE COMMENSURABILITY RULE** (new law, sibling to Conservation): *an edit applies
+simultaneously across exactly the objects that share the numéraire being edited.* Seconds
+(time) and curve-shape (unitless `shapeK`) are universally shared → they co-edit the whole
+selection. A value-axis is shared only among objects under the **same lens**: two Hz notes
+co-move in pitch; an Hz note and a bpm tempo point do not (no exchange rate — the model's
+job is that the question is never asked). The dragged object's lens names the value-numéraire
+in play. Today this collapses to "same panel" (one lens per panel); it generalizes when
+CC/f(x) lenses arrive. *Open future Q (parked):* do CC/f(x) values merit their own
+instantiated panels, keeping one-lens-per-panel true?
+
+**Selection vs. active surface** (two distinct things; conflating them was the confusion):
+*Selection* is global, heterogeneous, spans surfaces, built by the existing
+include/exclude/replace mode (pointer-first, no new gesture), and persists — multiple curves
+across panels is a *feature* because it's explicit. *Active surface* = the surface owning the
+value-axis right now (the grabbed object's lens). "Go back" = touching an
+already-selected-but-inactive object on a surface re-activates that surface without rebuilding
+its selection (per-surface: touching the tempo selection makes tempo active; the note
+selection stays selected-but-inactive).
+
+- **Cut 1 — DONE (2026-06-27):** depositCurve+depositAffect unified; one write
+  path (applyCurveToSelection) over the cross-surface union; tempo-select honors
+  selMode (replace clears both, include/exclude preserve other); applyAffect
+  generalized → note inserts gain affect-on-insert. Kernel proven in Node (25/25
+  + 5 affect). Browser feel-test pending. Next: Cut 2.
+- **Cut 2 — synced move / hang (NEXT, value+time):** time-drag co-moves the whole selection in
+  seconds; value-drag moves only the same-lens subset (commensurability rule); active-surface
+  Y-ownership + touch-to-reacquire. Delivers "the music speeds up exactly when this note fires."
+  NOT built this cut.
 - **Per-point `hangsOn`** beyond end-points; explicit re-hang; lens-as-color.
 - **Pitch charts as full lenses**: hangable (notes pinned to a tuning span), sliceable
   like notes; stacked tabs ("a row of browsers"); decouple/re-pin for polytempo.
@@ -349,3 +379,220 @@ features. Verify every layer in Node before handing over; state plainly what was
 proven vs what needs browser feel. Defer granular power honestly (named seams, flags
 present-but-collapsed) rather than half-building it. Pointer-first, cross-device — no
 keyboard-modifier-required interactions.
+
+
+**Backlog / deferred (captured 2026-06-27, post-Cut-1):**
+- [Cut-2-adjacent] Selection legibility: a selected tempo line segment needs a
+  select aura (notes have one). Generalizes: a focused / active-surface element
+  must read as visibly distinct from a merely-selected one — the rendering that
+  keeps cross-surface confusion from returning.
+- [drawing-tools] Split the overloaded `select` tool into three actions:
+  (a) select + move + delete only; (b) create new note/event/curve; (c) add/
+  subtract points on an existing curve. Today (c) lives inside select, so points
+  get moved by accident because select also moves. Resolves in the drawing-tools
+  consolidation; sharpens after Cut 2 (which amplifies the accidental-move cost).
+- [done in Cut-1, re-homes later] Note affect-on-insert is already wired; it
+  belongs conceptually to tool (c) above and migrates there when (c) is built.
+- [independent] Hover scope: live x/y readout under the cursor (time / pitch|bpm),
+  likely top-right; frees that corner from bend.
+- [format] Export-settings bar: bend range, base channel, program, etc. are MIDI-
+  EXPORT settings, not Tabota notation. Group as saved export settings, surfaced
+  before export, written into `.tabota` — making `.tabota` double as a Tabota Roll
+  project file. Multi-program merge of the master file = real but future (field notes).
+- [tech-debt] Snap: accrued debt from grid/tempo mechanics changes. Underlies
+  deposit + move precision, so Cut 2's time-drag rides on it — characterize before
+  leaning hard on snapped time.
+  
+  **Region removal (drawing-tools / region-tool phase, captured 2026-06-27):**
+Two mechanisms, and a clean distinction between them:
+
+1. Eclipse by overlap (destructive): drag a region fully over another → the
+   eclipsed region is deleted. BUT eclipse by the score-end mark is NON-destructive:
+   if the end-of-score mark is dragged over a region, or a region marker exceeds the
+   score mark, that marker stops rendering but continues to exist (clipped, preserved
+   — distinct from deletion).
+
+2. Delete action (eventually folded into a global split/join/delete tool that also
+   works on notes). Semantics:
+   - Delete = a merge that keeps only ONE coordinate system: the deleted span adopts
+     the NEIGHBOR's system (pitch if pitch, temporal if temporal) and drops its own.
+   - Default = swallow by the region behind (predecessor). A,B,C  delete B → A,(A),C.
+   - Selecting the FRONT region's flag instead = swallow by successor: A,(C),C.
+   - No region behind → take the region in front. A,B  delete A → (B),B.
+   - Only one region in the score → undeletable.
+   - Contrast with MERGE/join: same gesture family, but merge RETAINS BOTH coordinate
+     systems (the heterogeneous paddy). Delete collapses to one; merge keeps both.
+
+OPEN Q: does the swallowed span "(A)" remain a distinct re-pinnable region slot
+borrowing the neighbor's system, or does it truly fuse (neighbor simply grows over
+the span)? The parenthetical notation implies distinct-but-borrowing. Decide at build.
+
+A: It is a true fusion. The parenthesis is just there to indicate length, to be very certain. This is to disambiguate:
+with A, B, C, : delete B → A, C. can look like region B & its contents are both deleted. Here, with delete B → A,(A),C. 
+region B as a coordinate system is deleted, but its contents are not: they are rehung or rehomed into region A.
+
+WARNING: region-model mutation must obey the stale-controls rule —
+applyRegionToControls BEFORE syncRegionFromControls, or the next sync clobbers it.
+
+**Cut 2 (cross-surface synced move w/ tempo) — DEFERRED 2026-06-27.**
+Decision: disable note↔tempo synced move for now. Tempo manipulates time, so it
+can't ride a synced move without picking a re-timing model. Current behavior is the
+intended one: notes/events move together (existing group move); tempo moves alone;
+user does the two separately. NOT a bug — expected. (Note: cross-surface SELECTION
+from Cut 1 still works; only the synced MOVE is excluded.)
+When revisited, the unresolved fork is the time numéraire:
+ (a) musical-time-as-temporary-numéraire — move in quarters (note+tempo welded in
+     beat-space, "speeds up when this note fires"), recompute seconds afterward; or
+ (b) tempo-change-as-event-in-seconds — the change "starts at time X"; a move takes
+     it to "X−m", seconds-locked, coincidence not preserved under re-time.
+Lean was (a). Within-region only; cross-region needs the score-aware clock first.
+
+**Roadmap re-sequence (2026-06-27):**
+- B-layer Cut 1 — DONE.
+- Cut 2 (tempo-coupled move) — DEFERRED (above).
+- NEXT TIER (reprioritized above Cut 2):
+  1. Snap overhaul — snap to grid under new tempo/region mechanics; handle custom
+     rhythms beyond quarter/eighth (Cycla grammar into the snap layer). Foundational:
+     drawing + region + move all snap. Absorbs the snap tech-debt item.
+  2. Drawing-tools consolidation — tool-taxonomy split (select=move/delete only;
+     create; add/subtract points); pen/splines; note affect migrates to add/subtract
+     tool. ABSORBS region management (deletion spec already captured).
+- Snap looks like the natural first (unblocks the other two).
+
+---
+
+## SNAP OVERHAUL — contract (settled 2026-07-03, before code)
+
+Diagnosis (owner + code read): the snap layer is **split-brain** — carries tech debt
+from the variable-tempo + region builds, which added curve-aware coordinates and a
+per-region renderer but never updated snap to match.
+
+**Confirmed live defects (not merely latent):**
+1. **Flat back-conversion** — `snapSecToChart` snaps in curve-aware beat space then
+   converts back to seconds FLAT (`s0+snapped/unitsPerSec`), so the snapped second ≠
+   the drawn (curve-aware) gridline under any tempo ramp. Every consumer inherits it:
+   note `move`/`segMove`/`ptMove`, `moveBoundary`, pen/tempo deposits, seek.
+2. **`drawTimeGrid` is DEAD CODE** — the only cycla-phase renderer; nothing calls it
+   (only `drawAllGrids` runs, and it draws a flat lattice via `gridStepUnits`). So a
+   non-even cycla loaded on the active region **snaps to indispensability phases while
+   the screen draws a plain lattice** — snap≠grid today. The dead fn is the fossil of
+   the region-build swap that dropped cycla rendering.
+3. **Cycla is a GLOBAL** (`activeCycle`/`view.timeRegime`), not per-region; only the
+   active region can show/snap cycla. Blocks per-region cycla.
+
+**Decisions (owner):**
+1. **Leader-snap** for group move: the grabbed object snaps to grid; the rest follow
+   rigidly in SECONDS (the shared numéraire — Commensurability-consistent).
+2. **Frozen ruler** for tempo drag: snap reads the PRE-DRAG tempo map; the visible
+   ruler may shift as the drag re-times, but the pre-move ruler is the de-facto snap
+   target until release. Release/re-grab re-reads. **Double-tab region system SHELVED**
+   (elegant but unnecessary here); a **double-arrow beside the tempo point** is parked
+   as a possible future re-read affordance.
+3. **Cycla is the SOLE snap grammar.** Even note-values (♪/♩) are just specialized
+   indispensability orders (1st/2nd-order); the flat lattice becomes a *trivial cycla*.
+   `snapBeat` is parameterized by region; cycla promoted to per-region storage.
+4. **Chronological snaps to WHOLE SECONDS** everywhere ("free time is honestly free").
+5. **New invariant (sibling to Conservation/Commensurability) — THE GRID LAW:** *snap
+   targets are exactly the drawn gridlines.* Renderer and snapper consume ONE source.
+   Sole exception: during a frozen-ruler tempo drag (#2), which resets to true on
+   release/re-grab. This is the acceptance test for the whole overhaul.
+
+**Build order: Stage 1 → Stage 2 (owner-confirmed).** Backup at `tabota_roll - b.html`.
+- **Stage 1 — curve-aware plumbing.** Fix `snapSecToChart` flat return; audit + fix
+  the flat math in `move`, `segMove`, `ptMove` (→ leader-snap), `moveBoundary` (bars
+  derived via curve-aware inverse, not `width/regUnitSec`). New Node suite `verify_snap`:
+  snapped-sec == gridline-sec under linear + eased ramps, across boundaries, chrono
+  islands, group-move leader alignment. Fixes the curve-distortion class against the
+  CURRENT lattice/cycla split.
+- **Stage 2 — one grid, one grammar.** Delete dead `drawTimeGrid`; promote cycla to
+  per-region; re-express even lattice as trivial cycla; single `regionGrid(region)`
+  feeds BOTH renderer (`drawAllGrids`, `drawTempoGrid`) and snapper (`snapBeat`) —
+  makes THE GRID LAW structural (one source can't diverge). The pre-existing cycla-render
+  bug falls out fixed for free; cuts the per-region-cycla seam.
+- Stage 3 (gestures) / Stage 4 (browser feel) as scoped.
+
+### Stage 2 — DONE (2026-07-03), one grid one grammar; core Node-proven + browser smoke
+THE GRID LAW is now **structural**: `regionBarGrid(r)` is the SINGLE per-bar source
+(phases in [0,1) + render levels) consumed by BOTH the renderer and the snapper, so a
+drawn line IS a snap target by construction — they can't diverge. Edits in
+`tabota_roll.html`:
+1. `snapSecToChart` collapsed to `beatToSecIn(snapBeat(secToBeatIn(sec,r),r),r)` — one
+   path, **no active/non-active asymmetry** (that structural debt is gone).
+2. `regionCycle(r)`/`regionCycDepth(r)`/`regionBarGrid(r)` added; `snapBeat(b,r)` is now
+   region-parameterized (reads the region's OWN cycla; chrono → whole seconds).
+3. Even lattice re-expressed as a **trivial cycla** (isochronous phases at `gridStepUnits`).
+4. `drawAllGrids` metered branch + `drawTempoGrid` both draw from `regionBarGrid` per bar,
+   level-weighted. **Dead `drawTimeGrid` DELETED** (the orphaned cycla renderer / the fossil).
+5. Cycla promoted to **per-region storage** (`m.cycleId`, `m.cycDepth`): `makeRegion`,
+   `syncRegionFromControls` (writes them), `applyRegionToControls` (restores them on tab
+   switch/import). `setActiveCycle` needs no change — it sets the globals then `changed()`
+   runs the updated sync. Old regions without `cycleId` default to `even` (back-compat).
+
+**Proven (Node, 1877 assertions):** `verify_grid` 1230 — GRID LAW (snap lands on a
+rendered line) for even/tresillo/son32 × flat/ramp × 5-8; per-region grammar (region A
+even + B tresillo each snap to their own grid); **active/non-active symmetry** (snap in a
+region identical regardless of which is active); even parity (== old round-to-step) +
+odd-meter (5/8) parity. `verify_snap` 430 + `verify_consumers` 217 still green. All 4
+`<script>` blocks parse-check. (Harness `snap_core.js` mirrors the live functions.)
+
+**Browser smoke (localhost:8127):** page loads with NO console errors; grid renders across
+metered 4/4 + chronological + 5/8 regions; switching the active region's cycle to Tresillo
+updates header + region-time pill and redraws cleanly through the new per-region render path.
+
+**Needs your feel (xyh):** indispensability phase *spacing* legibility; snap-to-phase feel;
+per-region grid reading when adjacent regions carry different cyclas.
+
+**DEFERRED (follow-ups, documented):**
+- **Cycla doesn't round-trip through export yet.** `expJson` serializes an explicit `frame`
+  and omits `cycleId`/`cycDepth` — consistent with cycle/scale being *rulers* (snap≠hang),
+  but it means per-region grids are in-session only. Should ride in `payload` (like `tempo`
+  does) so a Roll *project* file restores its per-region grids. Ties into the
+  export-settings / .tabota-as-project-file item (field note 20260627). Owner's format call.
+- Time-label strip (`draw`, ~L1735) still uses global `settings`/`timeRegime` for bar
+  numbers — active-region-relative labels, pre-existing simplification, out of Stage-2 scope.
+
+**Stage 3 addendum — tempo-point horizontal nudge (settled 2026-07-03):**
+Decision #2 "frozen ruler" is NOT built — the snap is done in quarter-space (the
+invariant host clock), so the ruler doesn't truly move under re-timing; feel is fine.
+Kept a collapsed seam; double-tab stays shelved. The real item is accidental *vertical*
+(bpm) drift when the user wants horizontal-only. Build in Stage 3:
+- **← → horizontal-only nudge** in the contextual lane header when tempo point(s)
+  selected; moves `at` only, bpm untouched. **Distinct controls** from the existing
+  `←[curve before]`/`[curve after]→` (which pick a segment's curve — do NOT overload).
+- snap ON → step to adjacent grid cell; snap OFF → step by a **user-definable time
+  increment** (new small field in the lane header).
+- multi-point selection → **follow the leader** (leftmost or rightmost point), rigid in
+  quarter-space (same leader-snap logic as Stage 1 ptMove).
+- point creation via nudge NOT here — handled later by the split tool (drawing-tools).
+
+### Stage 1 — DONE (2026-07-03), logic-proven in Node
+Fixed the flat-back-conversion class. Five edits in `tabota_roll.html`:
+1. `snapSecToChart` return → `beatToSecIn(snapped, r)` (curve-aware; THE GRID LAW root).
+2. `move` (single note) → start-in-seconds + drag, snap, `secToBeatIn` back; metric
+   content (dur beats) invariant; content clamp in beats. Start is the leader.
+3. `segMove` → seconds delta (was flat `pxPerBeatIn`); each endpoint snaps in seconds.
+4. `ptMove` (group) → **leader-snap**: `startGroupMove` captures the selected point
+   nearest the grab as `leadSec`; the handler snaps the leader to a gridline and moves
+   the whole selection by that one **seconds** delta (Commensurability-consistent).
+   Neighbor/content clamps re-expressed in seconds (guard min-step left flat — invisible).
+5. `moveBoundary` → bars derived as the metric content each new second-span holds under
+   the region's OWN curve (`secToBeatIn`), not `width/regUnitSec`.
+
+**Proven (Node, 727 assertions):** `verify_snap` 510 — snapped-sec == drawn-gridline
+under linear/exp/log/smooth ramps, active + non-active regions, odd meter (5/8), chrono
+whole-seconds; harness self-checks by reproducing the bug under a FLAG-OFF build first
+(364 live fails) then eliminating it. `verify_consumers` 217 — move/segMove land on grid;
+ptMove leader on grid AND seconds-rigid (incl. the ramp sanity: beat-deltas DIFFER while
+seconds-deltas are equal — proves it's seconds-rigid, not beat-rigid); moveBoundary
+lands the boundary where dragged and conserves every note's absolute seconds across
+flat|flat, ramp(L)|flat, flat|borrow, flat|chrono. All 4 `<script>` blocks parse-check.
+
+**Needs browser feel (xyh):** the drag gestures themselves — does leader-snap feel right
+when grabbing a group mid-ramp; boundary drag under a ramp.
+
+**DEFERRED out of Stage 1 (documented at the code site):** `moveBoundary` does NOT
+re-anchor the RIGHT region's tempo curve when its start moves (tempo stays anchored at
+region start). A right region with a *leading interior ramp* shrunk/grown from the left
+is underspecified — same seam as `splitTempo`; belongs to the region-tool phase. Flat,
+borrowed, and trailing-ramp cases are exact. (`regUnitSec` is now unused — left in place;
+remove when convenient.)

@@ -1,0 +1,10 @@
+Master file, multiple specs, and the merge problem. `.tabota` was framed as lossless
+notation (SVG to MIDI's JPEG). But it also naturally carries information relevant only
+to one program — export settings, project state — that other interpreters ignore. So
+the format is not just notation but a master project file: heterogeneous plots, each
+interpreter reading only its own paddy. This raises a question the format hasn't had
+to answer: when program A edits the file, how does its edit merge back without
+clobbering program B's sections? Two shapes — (i) each program edits only its slice
+and writes events back in place, touching nothing else; (ii) an explicit merge
+protocol in import/export. The Rosetta-Stone-above-all-notations idea quietly implied
+a multi-writer file; the merge protocol is the part that implication hasn't paid for.
