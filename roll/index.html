@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/@tonejs/midi"></script>
 <!-- shared interpreter: exposes window.TabotaResolve.resolve() (same module index.html imports) -->
-<script type="module" src="tabota-resolve.js"></script>
+<script type="module" src="../tabota-resolve.js"></script>
 <style>
 :root{
   /* Light, fully hued — no achromatic axis. Pale tide-pool ground. */
@@ -987,7 +987,15 @@ function moveBoundary(i, newBoundarySec){
   const left=regions[i], right=regions[i+1];
   const leftStart=regionStartSec(left), rightEnd=regionStartSec(right)+regionSecLen(right);
   const MIN=0.25;
-  newBoundarySec=Math.max(leftStart+MIN, Math.min(rightEnd-MIN, newBoundarySec));
+  // Destructive eclipse: drag the boundary the whole way onto a neighbour and that region
+  // collapses to nothing — it is deleted, its notes re-home into the survivor (seconds are
+  // conserved by the reassignment below, so contents rehome rather than die with the chart).
+  // Internal A|B boundaries only; the piece-end flag (resizeLastRegion) is the non-destructive
+  // exception — its region clips against the score end but always survives.
+  let eclipse=null;
+  if(regions.length>1 && newBoundarySec<=leftStart+1e-6){ eclipse=left;  newBoundarySec=leftStart; }
+  else if(regions.length>1 && newBoundarySec>=rightEnd-1e-6){ eclipse=right; newBoundarySec=rightEnd; }
+  else newBoundarySec=Math.max(leftStart+MIN, Math.min(rightEnd-MIN, newBoundarySec));
   const lm=mainSystem(left), rm=mainSystem(right);
   // record affected notes' absolute seconds BEFORE resizing (start AND end — shape is conserved in time)
   const aff=notes.filter(n=>n.region===left.id||n.region===right.id).map(n=>({n, sec:noteStartSec(n), endSec:noteEndSec(n)}));
@@ -1020,8 +1028,19 @@ function moveBoundary(i, newBoundarySec){
     n.end.region = goLeft?left.id:right.id;
     n.end.beat = secToBeatIn(endSec, goLeft?left:right);
   }
+  // collapsed neighbour is gone as a chart; its (already re-homed) notes live on in the survivor
+  if(eclipse) removeRegion(eclipse.id);
   applyRegionToControls(activeRegion());   // keep controls in step (prevents stale-sync clobber)
   changed(); updateRegionIndicator();
+}
+/* delete a region's CHART only — callers must have already re-homed its notes/hangs (eclipse);
+   contrast deleteRegion(), which drops the notes with the region. Never leaves zero regions. */
+function removeRegion(id){
+  if(regions.length<=1) return false;
+  const i=regions.findIndex(r=>r.id===id); if(i<0) return false;
+  regions.splice(i,1);
+  if(activeRegionId===id) activeRegionId=regions[Math.max(0,i-1)].id;
+  return true;
 }
 function boundaryHandleAt(p){
   if(p.y<GUT_T+1 || p.y>GUT_T+20) return null;
@@ -2167,8 +2186,9 @@ cv.addEventListener('pointerup',e=>{
   if(drag){
     if(drag.mode==='marquee'){ commitMarquee(drag); }
     if(drag.mode==='boundary'){ pushHistory();
-      if(drag.snap==='end') resizeLastRegion(drag.preview); else moveBoundary(drag.i, drag.preview);
-      flash(drag.snap==='end'?'piece end moved':'boundary moved'); }
+      if(drag.snap==='end'){ resizeLastRegion(drag.preview); flash('piece end moved'); }
+      else { const before=regions.length; moveBoundary(drag.i, drag.preview);
+        flash(regions.length<before?'region eclipsed':'boundary moved'); } }
     if(drag.mode==='pitchBoundary'){ pushHistory();
       const pr=pitchRegions[drag.i]; pr.startSec=drag.preview; derivePitchHang(pr);   // re-home from where it was dropped
       pitchRegions.sort((a,b)=>a.startSec-b.startSec);
@@ -2348,7 +2368,7 @@ scaleSel.addEventListener('change',async()=>{
   if(v.startsWith('lib:')){
     const path=v.slice(4);
     if(!SCALES[v]){
-      try{ const r=await fetch('scala/'+path,{cache:'no-store'}); if(!r.ok) throw 0;
+      try{ const r=await fetch('../scala/'+path,{cache:'no-store'}); if(!r.ok) throw 0;
         const sc=parseScl(await r.text()); sc.name=sc.name||prettyName(path); SCALES[v]=sc;
       }catch(e){ flash('could not load '+path); scaleSel.value=activeScaleId; return; }
     }
@@ -2385,7 +2405,7 @@ function parseScl(text){
   return { name:(desc&&desc.length?desc:null), degreesCents, periodCents };
 }
 async function loadManifest(){
-  try{ const r=await fetch('scala/index.json',{cache:'no-store'}); if(!r.ok) return;
+  try{ const r=await fetch('../scala/index.json',{cache:'no-store'}); if(!r.ok) return;
     libraryManifest=await r.json(); populateScaleSelect();
   }catch(e){ /* no library available (file:// or absent) — upload still works */ }
 }
@@ -2430,7 +2450,7 @@ cycleSel.addEventListener('change',async()=>{
   if(v.startsWith('lib:')){
     const path=v.slice(4);
     if(!CYCLES[v]){
-      try{ const r=await fetch('cycla/'+path,{cache:'no-store'}); if(!r.ok) throw 0;
+      try{ const r=await fetch('../cycla/'+path,{cache:'no-store'}); if(!r.ok) throw 0;
         const cy=parseCyc(await r.text()); cy.name=cy.name||prettyCyc(path); CYCLES[v]=cy;
       }catch(e){ flash('could not load '+path); cycleSel.value=activeCycleId; return; }
     }
@@ -2531,7 +2551,7 @@ const cycDepth=document.getElementById('cycDepth');
 function cycDepthVal(){ return Math.max(1,Math.min(7, parseInt(cycDepth.value,10)||3)); }
 cycDepth.addEventListener('input', ()=>{ if(activeCycle && activeCycle.kind==='grammar') changed(); });
 async function loadCycManifest(){
-  try{ const r=await fetch('cycla/index.json',{cache:'no-store'}); if(!r.ok) return;
+  try{ const r=await fetch('../cycla/index.json',{cache:'no-store'}); if(!r.ok) return;
     cycleManifest=await r.json(); populateCycleSelect();
   }catch(e){ /* no library available — upload still works */ }
 }
@@ -3765,7 +3785,20 @@ impJsonFile.onchange=async()=>{
   impJsonFile.value='';
 };
 
-document.getElementById('clearAll').onclick=()=>{ if(notes.length && confirm('Clear all notes?')){ pushHistory(); notes=[]; clearGran(); changed(); } };
+document.getElementById('clearAll').onclick=()=>{
+  if(!confirm('Clear everything — notes AND regions — back to one free-time canvas?')) return;
+  pushHistory();
+  notes=[]; clearGran();
+  // one chronological (free-time) region: a blank slate with no meter, seconds only
+  REGID=1; const r=makeRegion(); r.name='Region 1';
+  const m=mainSystem(r); m.kind='chronological'; m.bars=settings.bars||8;   // bars means SECONDS in free time
+  regions=[r]; activeRegionId=r.id;
+  PRID=1; pitchRegions=[{id:'p'+(PRID++), startSec:0, scaleId:'12tet', regime:'scale'}]; activePitchRegionId=pitchRegions[0].id;
+  applyRegionToControls(activeRegion());   // stale-controls rule: push model → DOM before changed() syncs back
+  updateRegionIndicator();
+  fitContent(); changed();
+  flash('cleared to free time');
+};
 
 function download(blob,name){ const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1500); }
 let flashTimer=null;
@@ -3819,7 +3852,17 @@ function seed(){
 }
 populateRoot(); populateScaleSelect(); loadManifest();
 populateCycleSelect(); loadCycManifest();
-window.addEventListener('load',()=>{ resize(); seed(); applyRegionToControls(activeRegion()); updateRegionIndicator(); fitContent(); regimePill(); changed(); });
+window.addEventListener('load',()=>{
+  resize(); seed(); applyRegionToControls(activeRegion()); updateRegionIndicator(); fitContent(); regimePill(); changed();
+  // The flex layout and the late Google-fonts swap resize the canvas box AFTER load, so the first
+  // fit runs against a smaller canvas and the seed reads compressed. Re-fit once the box settles.
+  // Bounded to a short startup window so a slow font swap can't clobber a view the user has by then
+  // zoomed/scrolled themselves.
+  const bootAt=performance.now();
+  const refit=()=>{ if(performance.now()-bootAt<4000){ resize(); fitContent(); } };
+  requestAnimationFrame(()=>requestAnimationFrame(refit));
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
+});
 resize(); // initial (in case load already fired)
 })();
 </script>
