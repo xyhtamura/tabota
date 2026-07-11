@@ -116,6 +116,7 @@ input[type=number].w48{width:48px}
 .stage{position:relative; flex:1; min-height:0; overflow:hidden; background:var(--note-bg)}
 #roll{display:block; width:100%; height:100%; cursor:crosshair; touch-action:none}
 .stage.tool-select #roll{cursor:default}
+.stage.tool-point #roll{cursor:crosshair}
 .stage.tool-erase #roll{cursor:not-allowed}
 .stage.tool-pan #roll{cursor:grab}
 
@@ -309,7 +310,8 @@ select:disabled{
 
 <div class="toolbar">
   <div class="group seg" id="tools">
-    <button data-tool="select" title="Select / move / resize / edit points (V)">▣ select</button>
+    <button data-tool="select" title="Select / move / resize whole notes — object level (V)">▣ select</button>
+    <button data-tool="point" title="Point tool — select/move points; click a curve body to add (drag to place, release to commit); double-click a point to delete (A)">⋯ point</button>
     <button data-tool="hold" class="on" title="Hold note — point type (H)">━ hold</button>
     <button data-tool="glide" title="Glide — drag start→end (G)">╱ glide</button>
     <button data-tool="pen" title="Pen — click to place points, double-click/Enter to finish (P)">✎ pen</button>
@@ -1680,6 +1682,14 @@ function drawNotes(W,H){
         if(showPts) handle(px,py,hi); else dot(px,py,c);
       }
     }
+    // tentative "ghost" point — a point-tool add being placed by the held drag; not committed until release
+    if(drag && drag.ghost && drag.ghost.note===n){ const gp=n.pts[drag.ghost.idx];
+      if(gp){ const gx=beatToX(n.start+gp.t*n.dur), gy=hzToY(gp.hz);
+        ctx.save(); ctx.strokeStyle=col('--algae'); ctx.lineWidth=2; ctx.setLineDash([3,3]); ctx.globalAlpha=.7;
+        ctx.beginPath(); ctx.arc(gx,gy,7.5,0,7); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha=.4; ctx.fillStyle=col('--algae');
+        ctx.beginPath(); ctx.arc(gx,gy,3.6,0,7); ctx.fill(); ctx.restore(); }
+    }
   }
   _ctxRegion=null;
   ctx.restore();
@@ -1907,47 +1917,83 @@ cv.addEventListener('pointerdown',e=>{
   const hit=noteAt(p.x,p.y);
   if(t==='erase'){ if(hit){ pushHistory(); notes=notes.filter(n=>n!==hit); selection.delete(hit.id); changed(); } return; }
 
+  // ▣ SELECT — black arrow: WHOLE-NOTE (object) level only. Never grabs a lone point/segment.
   if(t==='select'){
     dragHist=histSnapshot();                              // capture pre-state; committed on pointerup if notes change
     const h=selectHit(p.x,p.y);
     const mode = e.shiftKey ? 'include' : (e.altKey ? 'exclude' : selMode);
-    if(h && (mode==='include'||mode==='exclude')){
+    const isEnd = h && h.kind==='point' && (h.note.type==='hold' || h.idx===0 || h.idx===h.note.pts.length-1);
+    if(h && (mode==='include'||mode==='exclude')){        // set-op on the WHOLE note
+      segSel=null; pointSel=null; ptSel=new Map();
+      if(mode==='exclude') selection.delete(h.note.id); else selection.add(h.note.id);
+      tempoSel.clear();
+      drag = (mode==='include' && selection.size>0) ? startGroupMove(p) : null;
+      changed(); return;
+    }
+    if(h){
+      ptSel=new Map(); segSel=null; pointSel=null; tempoSel.clear();
+      if(isEnd){                                          // end-handle → TIME-ONLY resize (pitch frozen, fork (i))
+        if(!selection.has(h.note.id)) selection.clear();
+        selection.add(h.note.id);
+        drag={mode:'resize', freezePitch:true, note:h.note, ptIdx:(h.note.type==='hold'?0:h.idx),
+              ep:(h.note.type==='hold'?(h.edge||holdEdge(h.note,p.x)):null), sx:p.x, sy:p.y, o:snapshot(h.note)};
+      } else if(selection.size>1 && selection.has(h.note.id)){   // grab & move the whole multi-note selection
+        drag=startGroupMove(p);
+      } else {                                            // single whole-note move (rigid, all points)
+        if(!selection.has(h.note.id)) selection.clear();
+        selection.add(h.note.id);
+        drag={mode:'move', note:h.note, sx:p.x, sy:p.y, o:snapshot(h.note)};
+      }
+    } else {
+      const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
+      if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
+      drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand,whole:true};  // marquee selects WHOLE notes
+    }
+    changed(); return;
+  }
+
+  // ⋯ POINT — white arrow: sub-object. Hit-kind disambiguates (vector-pen convention).
+  if(t==='point'){
+    dragHist=histSnapshot();
+    const h=selectHit(p.x,p.y);
+    const mode = e.shiftKey ? 'include' : (e.altKey ? 'exclude' : selMode);
+    if(h && (mode==='include'||mode==='exclude')){        // set-op on the hit entity's points
       segSel=null; pointSel=null;
       mergeSel(h.note, new Set(entityIndices(h)), mode==='exclude'?'sub':'add');
       drag = (mode==='include' && (ptSel.size>0||selection.size>0)) ? startGroupMove(p) : null;
       changed(); return;
     }
-    if(h){
+    if(h && h.kind==='point'){                            // select + move this point (full time+pitch)
       const multi = ptSel.size>0 || selection.size>1;
-      const hitInSel = (h.kind==='point') ? (ptSelHas(h.note,h.idx)||selection.has(h.note.id))
-                                          : (selection.has(h.note.id)||ptSel.has(h.note));
-      if(multi && hitInSel){                              // grab and move the whole granular selection
-        segSel=null; pointSel=null; drag=startGroupMove(p);
-      } else {
-        ptSel=new Map(); tempoSel.clear();                // single interaction resets partial selection (replace clears both surfaces)
-        if(h.kind==='point'){
-          segSel=null;
-          if(!selection.has(h.note.id)) selection.clear();
-          selection.add(h.note.id);
-          pointSel={note:h.note, idx:(h.note.type==='hold'?0:h.idx)}; if(tempoSel) tempoSel.clear();   // exclusive with ♩= entry
-          drag={mode:'resize', note:h.note, ptIdx:h.idx, ep:(h.note.type==='hold'?(h.edge||holdEdge(h.note,p.x)):null), sx:p.x, sy:p.y, o:snapshot(h.note)};
-        } else if(h.kind==='segment'){
-          selection.clear(); pointSel=null; segSel={note:h.note, seg:h.seg};
-          drag={mode:'segMove', note:h.note, seg:h.seg, sx:p.x, sy:p.y,
-                absPts:h.note.pts.map(q=>({beat:h.note.start+q.t*h.note.dur, hz:q.hz, curve:q.curve}))};
-        } else { // whole note (aura)
-          segSel=null;
-          if(!selection.has(h.note.id)) selection.clear();
-          selection.add(h.note.id);
-          pointSel = (h.note.type==='hold') ? {note:h.note, idx:0} : null;
-          drag={mode:'move', note:h.note, sx:p.x, sy:p.y, o:snapshot(h.note)};
-        }
+      const hitInSel = ptSelHas(h.note,h.idx)||selection.has(h.note.id);
+      if(multi && hitInSel){ segSel=null; pointSel=null; drag=startGroupMove(p); }
+      else {
+        ptSel=new Map(); tempoSel.clear(); segSel=null;
+        if(!selection.has(h.note.id)) selection.clear();
+        selection.add(h.note.id);
+        pointSel={note:h.note, idx:(h.note.type==='hold'?0:h.idx)};
+        drag={mode:'resize', freezePitch:false, note:h.note, ptIdx:h.idx,
+              ep:(h.note.type==='hold'?(h.edge||holdEdge(h.note,p.x)):null), sx:p.x, sy:p.y, o:snapshot(h.note)};
       }
-    } else {
-      const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
-      if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
-      drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand};
+      changed(); return;
     }
+    if(h && (h.kind==='segment'||h.kind==='note') && h.note.type!=='hold'){   // ghost-add on the curve body
+      const hit=h.note;
+      const t2=Math.max(0.0001,Math.min(0.9999,(xToBeatIn(p.x,regionById(hit.region))-hit.start)/Math.max(1e-6,hit.dur)));
+      const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+      let i=0; while(i<hit.pts.length && hit.pts[i].t<t2) i++;
+      const np={t:t2,hz,curve:depositCurve}; const A=(i>0)?hit.pts[i-1]:null; const orig=A?segCurve(hit,i-1):(hit.curve||'linear');
+      hit.pts.splice(i,0,np); applyAffect(A,np,orig);      // tentative insert; same held drag repositions it, release commits
+      ptSel=new Map(); segSel=null; tempoSel.clear();
+      selection.clear(); selection.add(hit.id);
+      pointSel={note:hit, idx:i};
+      drag={mode:'resize', freezePitch:false, note:hit, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(hit), ghost:{note:hit,idx:i}};
+      changed(); return;
+    }
+    // empty (or a bare hold body) → marquee point-selection
+    const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
+    if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
+    drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand};
     changed(); return;
   }
 
@@ -2138,14 +2184,14 @@ cv.addEventListener('pointermove',e=>{
       else { const b=xToBeatSnappedIn(p.x,home); const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; }
     } else {
       const idx=d.ptIdx, last=n.pts.length-1;
-      const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+      const hz = d.freezePitch ? null : snapPitchHzAt(yToHz(p.y), xToSec(p.x));   // select-tool end-resize freezes pitch
       const b=xToBeatSnappedIn(p.x,home);
-      if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; n.pts[0]={...n.pts[0],hz}; }
-      else if(idx===last){ n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); n.pts[last]={...n.pts[last],hz}; }
+      if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; if(hz!=null) n.pts[0]={...n.pts[0],hz}; }
+      else if(idx===last){ n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); if(hz!=null) n.pts[last]={...n.pts[last],hz}; }
       else { // interior point — move in (t,hz) between its neighbors, note extent unchanged
         let nt=(b-n.start)/Math.max(1e-6,n.dur);
         nt=Math.max(n.pts[idx-1].t+1e-4, Math.min(n.pts[idx+1].t-1e-4, nt));
-        n.pts[idx]={...n.pts[idx], t:nt, hz};
+        n.pts[idx] = hz!=null ? {...n.pts[idx], t:nt, hz} : {...n.pts[idx], t:nt};
       }
     }
     draw(); updateStatus(); return;
@@ -2177,9 +2223,17 @@ function rebuildFree(note,raw){
 }
 
 function hoverFeedback(p){
-  if(view.tool!=='select'){ return; }
-  const h=selectHit(p.x,p.y);
-  cv.style.cursor = !h ? 'default' : (h.kind==='note' ? 'move' : 'pointer');
+  if(view.tool==='select'){
+    const h=selectHit(p.x,p.y);
+    const isEnd = h && h.kind==='point' && (h.note.type==='hold' || h.idx===0 || h.idx===h.note.pts.length-1);
+    cv.style.cursor = !h ? 'default' : (isEnd ? 'ew-resize' : 'move');   // ends resize (time only); body moves
+    return;
+  }
+  if(view.tool==='point'){
+    const h=selectHit(p.x,p.y);
+    cv.style.cursor = !h ? 'default' : (h.kind==='point' ? 'pointer' : 'crosshair');   // point selects/moves; body adds
+    return;
+  }
 }
 
 cv.addEventListener('pointerup',e=>{
@@ -2209,23 +2263,13 @@ cv.addEventListener('pointerleave',()=>{ lastMouse.inside=false; });
 // double-click: finish the pen, or insert/delete a breakpoint on a glide/free note
 cv.addEventListener('dblclick',e=>{
   if(penNote){ finalizePen(); return; }
-  if(view.tool!=='select') return;
+  if(view.tool!=='point') return;                 // point tool owns point delete (add = drag a curve body)
   const p=evtPos(e); if(p.x<GUT_L||p.y<GUT_T) return;
-  const hit=noteAt(p.x,p.y); if(!hit || hit.type==='hold') return;
-  const idx=pointHitIndex(hit,p.x,p.y);
-  if(idx>0 && idx<hit.pts.length-1){          // delete interior point
-    pushHistory();
-    hit.pts.splice(idx,1); if(hit.type==='free' && hit.pts.length===2) hit.type='glide';
-    changed(); return;
-  }
-  // insert a point on the body at the cursor
+  const hit=noteAt(p.x,p.y); if(!hit) return;
+  const idx=pointHitIndex(hit,p.x,p.y); if(idx<0) return;   // must land on a point
   pushHistory();
-  const t=Math.max(0.0001,Math.min(0.9999,(xToBeatIn(p.x,regionById(hit.region))-hit.start)/Math.max(1e-6,hit.dur)));
-  const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
-  let i=0; while(i<hit.pts.length && hit.pts[i].t<t) i++;
-  const np={t,hz,curve:depositCurve}; const A=(i>0)?hit.pts[i-1]:null; const orig=A?segCurve(hit,i-1):(hit.curve||'linear');
-  hit.pts.splice(i,0,np); applyAffect(A,np,orig);   // deposit affect now fires on note inserts too
-  selection.clear(); selection.add(hit.id);
+  if(!removePoints(hit, new Set([idx]))) notes=notes.filter(n=>n!==hit);   // re-normalizes; drops note if empty
+  clearGran();
   changed();
 });
 
@@ -2272,7 +2316,8 @@ function commitMarquee(d){
     if(n.type==='hold'){ const yy=hzToY(pitchAt(n,0)); if(lineVsRect(nx0,yy,nx1,yy,x,y,w,h)) hit.add(0); }
     else { for(let i=0;i<n.pts.length-1;i++) if(segHitsRect(n,i,x,y,w,h)){ hit.add(i); hit.add(i+1); } }
     if(!hit.size) continue;
-    mergeSel(n, hit, op);
+    if(d.whole){ if(op==='sub') selection.delete(n.id); else selection.add(n.id); }   // select-tool marquee = whole notes
+    else mergeSel(n, hit, op);
   }
   } finally { _ctxRegion=null; }
 }
@@ -2303,7 +2348,7 @@ document.querySelectorAll('#tools button').forEach(b=>b.addEventListener('click'
   setTool(t);
 }));
 function setTool(t){ if(penNote && t!=='pen') finalizePen(); view.tool=t;
-  if(t!=='select'){ ptSel=new Map(); pointSel=null; segSel=null; }
+  if(t!=='select' && t!=='point'){ ptSel=new Map(); pointSel=null; segSel=null; }
   document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x.dataset.tool===t));
   stage.className='stage tool-'+t; cv.style.cursor=''; changed();
 }
@@ -2875,7 +2920,7 @@ window.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
   if(penNote && (e.code==='Enter'||e.code==='Escape')){ e.preventDefault(); finalizePen(); return; }
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); return; }
-  const map={KeyV:'select',KeyH:'hold',KeyG:'glide',KeyP:'pen',KeyF:'free',KeyE:'erase'};
+  const map={KeyV:'select',KeyA:'point',KeyH:'hold',KeyG:'glide',KeyP:'pen',KeyF:'free',KeyE:'erase'};
   if(map[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(map[e.code]);
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){ e.preventDefault(); if(e.shiftKey) redo(); else undo(); return; }
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){ e.preventDefault(); redo(); return; }

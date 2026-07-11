@@ -49,8 +49,8 @@ is the seam the eventual unification rides on (§8, "B-layer").
 | `tabota_reference_guide.md` | Human-readable language reference (tempo/currency/lenses + migration notes). |
 | `tabota-resolve.js` | **The shared interpreter** (ES module + `window.TabotaResolve`). `resolve(doc)` → `{nodes, frames, totalSec, datum, diagnostics}`. Both pages consume it. |
 | `index.html` | Read-only **renderer** over the resolver. Draws a *wider* domain than the Roll. Exports the **visual score (SVG)**. No MIDI. |
-| `tabota_roll.html` | **TaboTa Roll** — the interactive realizer/editor. Contiguous multi-region canvas, MIDI export, Web Audio playback, **variable-tempo track**. The big file (~3.7k lines). |
-| `cycla_builder.html` | Builder for cycla (subdivision-grammar meter) files. |
+| `roll/index.html` | **TaboTa Roll** — the interactive realizer/editor. Contiguous multi-region canvas, MIDI export, Web Audio playback, **variable-tempo track**. The big file (~3.7k lines). |
+| `cycla/builder/index.html` | Builder for cycla (subdivision-grammar meter) files. |
 | `tabota_chart_model.md` | **CURRENT authoring contract.** The atlas: one clock, charts over it, per-point `hangsOn`, snapping≠hanging, tiling-as-mode. |
 
 **Deployment**: GitHub Pages; local testing REQUIRES a server
@@ -65,7 +65,7 @@ module and index.html `fetch`es the guide. `file://` will not work. Hard-refresh
                         │
                 tabota-resolve.js       (what it MEANS: one shared interpretation)
                    /            \
-        index.html               tabota_roll.html
+        index.html               roll/index.html
    (read-only renderer,         (editor/realizer: receptors filter
     draws the wide domain,       resolver nodes to the playable
     SVG export)                  subset; own reverse-projection
@@ -515,7 +515,7 @@ per-region renderer but never updated snap to match.
 THE GRID LAW is now **structural**: `regionBarGrid(r)` is the SINGLE per-bar source
 (phases in [0,1) + render levels) consumed by BOTH the renderer and the snapper, so a
 drawn line IS a snap target by construction — they can't diverge. Edits in
-`tabota_roll.html`:
+`roll/index.html`:
 1. `snapSecToChart` collapsed to `beatToSecIn(snapBeat(secToBeatIn(sec,r),r),r)` — one
    path, **no active/non-active asymmetry** (that structural debt is gone).
 2. `regionCycle(r)`/`regionCycDepth(r)`/`regionBarGrid(r)` added; `snapBeat(b,r)` is now
@@ -566,7 +566,7 @@ Kept a collapsed seam; double-tab stays shelved. The real item is accidental *ve
 - point creation via nudge NOT here — handled later by the split tool (drawing-tools).
 
 ### Stage 1 — DONE (2026-07-03), logic-proven in Node
-Fixed the flat-back-conversion class. Five edits in `tabota_roll.html`:
+Fixed the flat-back-conversion class. Five edits in `roll/index.html`:
 1. `snapSecToChart` return → `beatToSecIn(snapped, r)` (curve-aware; THE GRID LAW root).
 2. `move` (single note) → start-in-seconds + drag, snap, `secToBeatIn` back; metric
    content (dur beats) invariant; content clamp in beats. Start is the leader.
@@ -596,3 +596,133 @@ region start). A right region with a *leading interior ramp* shrunk/grown from t
 is underspecified — same seam as `splitTempo`; belongs to the region-tool phase. Flat,
 borrowed, and trailing-ramp cases are exact. (`regUnitSec` is now unused — left in place;
 remove when convenient.)
+
+---
+
+## DRAWING-TOOLS CONSOLIDATION — contract (settled 2026-07-11, before code)
+
+Next roadmap item after snap. Splits the overloaded `select` tool. Owner call:
+**maximum separation** — the graphic-software two-arrow model (Illustrator black/white
+arrow), not aliquoto's lighter select/move/place (aliquoto is a flat single-point
+partial domain; Roll notes are multi-point curves + segments + endpoints — richer,
+graphic-software kinship).
+
+**The two arrows + create:**
+
+- **▣ select — black arrow. WHOLE-NOTE (object) level ONLY.** Click note → select+move
+  (rigid, all points). Click an end-handle → **time-only resize** (dur/start; pitch
+  FROZEN — owner fork (i), 2026-07-11). Marquee selects whole notes. Delete = whole
+  notes. **Never selects or moves a lone point/segment.** This is what kills
+  accidental-move by construction.
+- **⋯ point — white arrow [NEW]. Sub-object, on an existing curve.** Disambiguate by
+  WHAT IS HIT (vector-pen convention), NOT by repurposing the +/− chips:
+  - hit a **point** → select + move (full time+pitch; the old `resize`/`ptMove` logic;
+    setops via shift/alt as today).
+  - hit a **segment/body** (not a point) → **ghost-add** (see mechanic below).
+  - **double-click a point** → delete (migrated from select's dblclick, gated to point).
+  - empty space → marquee (point selection).
+  - `applyAffect` (affect-on-insert) lives here now — it's a point-insert property.
+- **create (b)** — hold/glide/pen/free UNCHANGED this cut. (Pen already builds a curve
+  point-by-point → conceptual overlap with point-add; park "pen = point-tool on a fresh
+  curve" as a future merge, not now.)
+
+**SELMODE unchanged:** replace/+/− stay meaning selection SET-OPS in *both* tools (no
+per-tool reinterpretation — that was rejected as confusing). Add/delete ride on
+hit-kind + dblclick instead.
+
+**Named mechanic — "tentative point / ghost-drop" (owner, 2026-07-11):** adding a point
+does not commit on click. Press on a curve body inserts the point AND the same held
+drag repositions it live (reuse the existing `resize` interior-point branch); the point
+renders **translucent/ghost** until **release commits** (undoable). Release-without-move
+= plain add at the click spot. Lets the user feel the added point's effect before
+committing. **Cross-project:** port the same tentative-add to aliquoto's `place` tool;
+log in DEPENDENCIES.md as a hand-synced interaction pattern (like `rnd()`), no shared
+runtime file.
+
+**Dropped / deferred this cut:**
+- **`segMove` (drag a whole segment)** — dropped in the point tool; click-segment now
+  ADDS a point (the more useful vector action). segMove was niche; revive under a
+  modifier later if missed.
+- **Region delete-as-merge** (swallow-by-neighbor; spec ll.406–432) — follow-up cut;
+  eclipse-by-overlap already shipped (2026-07-10). Not this cut ("select more important").
+
+**Scope this cut:** select→object-only + the new point tool + ghost-add. Nothing else.
+
+**Verify (owner method):** tool→hit ROUTING is pure dispatch → Node-provable (which tool
+claims which hit; select never returns a point/segment target; ghost-commit path ==
+direct-insert path; point tool reproduces the old reshape numerics). Reshaping *feel*,
+ghost-drag legibility, the frozen-pitch resize ergonomics = browser feel-test. State the
+proven/feel split in the handoff, as always.
+
+### Stage 1 — DONE (2026-07-11), logic-proven + browser smoke
+Select→object-only (end-handle = time-only resize, pitch frozen; marquee = whole notes);
+new `⋯ point` tool (key A): point=select+move, body=ghost-add (tentative, release
+commits, `--algae` translucent render), dblclick point=delete via `removePoints`; SELMODE
+untouched. `segMove` dropped (body-click = add). `resize` drag gains `freezePitch`.
+Proven: all script blocks parse; page loads clean, no console errors, tool switch
+verified via DOM; Node harness `verify_pointtool.js` 12/12 (freezePitch guard, ghost
+insert-index interior). NOTE: app is IIFE-wrapped (`'use strict'`) → injected-script
+automation can't reach internals; gesture feel remains a hand test, by design.
+**Needs feel (xyh):** select/point separation in the hand, ghost legibility, frozen-pitch
+end-resize, dblclick delete. Aliquoto ghost-add port = its own aliquoto session (owner).
+
+---
+
+## THE TOOL MATRIX — open design note (2026-07-11, thinking, NOT settled)
+
+Owner insight, post-Stage-1. **Do not build from this yet** — it reframes the create
+consolidation and needs contracts settled first. Captured so the thinking survives.
+
+**Two orthogonal axes, currently welded together in the tool buttons:**
+- **Gesture axis** — *how does my gesture deposit?* hold/glide/pen/free are not four
+  tools; they are **arities**: 1-tap, 2-drag, N-tap, sampled. Universal grammars.
+- **Target axis** — *what does my gesture affect?* new event / existing event / region
+  / (tempo, pitch — the B-layer surfaces). Point-vs-draw are TARGET answers, not
+  gesture answers.
+
+Today's tools = frozen cells of the matrix: hold/glide/pen/free = (arity, target=NEW);
+the point tool = (1-tap, target=EXISTING points). The unfrozen cells are real wants:
+free-draw new points ONTO an existing curve; draw endpoints that GUIDE an existing
+event. The matrix predicts they should exist; no tool exposes them today.
+
+**Illustrator re-examined — NOT actually explicit.** Pen morphs by *hover proximity*:
+over segment → add-anchor, over anchor → delete-anchor, over endpoint → continue path,
+elsewhere → new path. Implicit modality — the same accidental-action disease Stage 1
+killed in select. Illus is precedent for the gesture GRAMMARS, not for target-binding.
+The matrix is more explicit than illus.
+
+**Settled fragment (owner):** hold-like notes ARE glide notes that snap horizontally
+during placement (ghost applies); after placement they are manipulated as regular
+glides. So `type:'hold'` tends to dissolve from a note-TYPE into a placement
+CONSTRAINT. Format/schema/export back-compat question parked but real.
+
+**SELMODE leak (same disease, noted):** replace/+/− are selection set-ops in
+select/point, but deposit polarity in aliquoto's place (+ = add point, − = delete
+point). Two concepts wearing one chip row. Matrix candidate resolution: mode = gesture
+polarity against the target. OR they are genuinely two axes. Not settled.
+
+**Select's role mutates:** if target=existing, WHICH existing? Selection is the natural
+binder — the gesture affects the selected event(s). Select stops being just a mover and
+becomes the **target-binder**. Ties directly into Cut-1 cross-surface selection and the
+Commensurability rule (selection already global + heterogeneous; the dragged lens names
+the numéraire — same shape).
+
+**B-layer connection:** the tempo lane already hand-duplicates hold/glide/pen/free. If
+gesture grammars are universal over targets, the six-tool duplication collapses — the
+matrix is the TOOL-LAYER FACE of the B-layer unification the roadmap already names.
+Regions too: slice/merge/delete may be gesture grammars against target=region.
+
+**Open questions (settle before any build):**
+1. How is target bound — a toolbar MODE (new/existing), by current selection, or by
+   explicit pick? (Selection-as-binder is the current lean; not settled.)
+2. Do arities stay separate buttons, or collapse to anchored-create + free with arity
+   read from the gesture? (Earlier 4→2 proposal is now downstream of this question.)
+3. What does SAMPLED-onto-existing mean — replace the span? merge points? (aliquoto
+   OVR/bake is prior art.)
+4. Regions in the matrix: which gesture grammars apply, and does the region delete/merge
+   spec (ll.406–432) re-express as matrix cells?
+5. Mode chips: selection set-ops vs deposit polarity — one concept or two?
+6. Does `type:'hold'` survive in the format, or become placement-constraint only?
+   (schema + export + legacy import back-compat.)
+
+Status: current Stage-1 build is stable; no code from this note yet.
