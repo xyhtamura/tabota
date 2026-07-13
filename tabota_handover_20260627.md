@@ -726,3 +726,87 @@ Regions too: slice/merge/delete may be gesture grammars against target=region.
    (schema + export + legacy import back-compat.)
 
 Status: current Stage-1 build is stable; no code from this note yet.
+
+### Development 2 (2026-07-11, later same day) — selection-as-scope (the Photoshop model)
+
+Owner, post-commit: aliquoto's move/place distinction + Photoshop's "affect only
+selected" generalize the matrix cleanly. **Selection is SCOPE, tools are VERBS.**
+
+- **select** — the scope-binder. Granular (points) or object (notes); marquee bands.
+  replace/+/− chips live HERE and only here. **Resolves the SELMODE leak**: set-ops are
+  select's chips; deposit polarity is draw/erase's own axis. Two chip-meanings were two
+  tools' properties all along. Needs **universal deselect + select-all** (pointer-first,
+  always visible — Photoshop Ctrl-D/A as accelerators only).
+- **move** — verb: translate the selection (spline points, endpoints, whole notes —
+  whatever is selected). Leader-snap seconds-rigid machinery (`ptMove`) already exists.
+- **draw** — verb: deposit points, **scoped by selection**. Empty selection → NEW note.
+  Non-empty → deposit into the selected curve(s), never spawning a note. The
+  hold/glide/pen/free arities become draw's MODES (or gesture-inferred — still open).
+  Ghost-tentative applies to every deposit.
+- **erase** — draw's − polarity (or its own verb). Selection scopes: selected → only
+  those curves' points; empty → anything.
+
+**The point tool dissolves** — its two halves redistribute: point-move → move (with
+points selected), point-add → draw (with a curve selected). Stage-1's black/white-arrow
+split becomes a CANDIDATE FOR SUPERSESSION; machinery survives (freezePitch, ghost-add,
+hit routing, `removePoints`), the tool layer above gets re-cut. Do not rip out until
+this contract settles.
+
+**Free wins:**
+1. **hold→glide conversion is gestural**: select the hold, draw a point onto it —
+   1pt→2pt, it's a glide. No convert command. (Answers the earlier open question.)
+2. The whole onto-existing matrix column unlocks at once: free-scribble onto a selected
+   curve; glide-endpoints guiding an existing event — one rule, every arity.
+3. **Multi-selection deposit target** already answered by Cut-1 vocabulary: the
+   **ACTIVE SURFACE / active object** takes the deposit (selection is global; active
+   owns the axis).
+
+**SETTLED decisions (owner, 2026-07-11 Dev-2 continued):**
+1. **HARD LAW (careful mode) — no new note while a selection exists.** When any selection
+   is present, `draw` is LOCKED to depositing into that selection; it will NEVER spawn a
+   new note. To make a new note the user must consciously **deselect** first. The accepted
+   tax that guarantees zero accidental stray notes. **Sole exception: auto-select ON**
+   (decision #3) — then cursor proximity governs and the law relaxes by the user's own
+   choice. "At all costs" means: with auto-select OFF, there is no other escape hatch.
+2. **Scope must be visible — the TARGET PILL.** A persistent, always-visible pill reads
+   the *consequence* of the next deposit: `draw → note 7` (scoped) vs `draw → NEW`
+   (empty selection). Chosen over "light up the select button" because it states the
+   outcome, not just the state, and can't be missed when the aura is offscreen. In
+   auto-select mode it reads the hover target live. Canvas ember aura stays as the
+   *where*; the pill is the *what-next*. Needs cheap universal **deselect + select-all**
+   (pointer-first; Ctrl-D/A accelerators only).
+3. **Auto-select is a global toggle (Photoshop prior art), applies to BOTH move AND
+   draw** — trades safety for convenience, user's explicit choice:
+   - **OFF (careful, default):** selection is authoritative. Selection present → deposit
+     into it / move it, never new (law #1). Empty → draw makes new; move no-op.
+   - **ON (convenient):** CURSOR PROXIMITY is authoritative, selection ignored for
+     targeting. Curve under cursor → target only that curve. No curve beneath → draw
+     makes new / move no-op. Ambiguity returns, but by the user's choice.
+   (Earlier asymmetric idea — auto-select objects but not points — SUPERSEDED by the
+   single global toggle.)
+4. **Deposit is confined to the selected note's existing time-extent — NO
+   auto-extension.** Drawing past `[start,end]` does nothing. To extend, the user moves
+   an endpoint with `move` FIRST, then draws from there. Keeps Conservation simple and
+   stays out of the lazy-margin question entirely.
+
+**Still open:**
+5. Where do slice/pan/erase sit? **DEFERRED — leave them be until the drawing
+   consolidation build reaches them; their fate gets clearer with code in hand** (owner).
+   (erase likely = draw's − polarity, same scoping law; slice/pan probably orthogonal.)
+6. Arities (1/2/N/sampled) as explicit draw-modes vs gesture-inferred — downstream of
+   the above, still to settle.
+7. `type:'hold'` survival in schema/export (from Dev-1 note) — unchanged, still parked.
+
+**The BAND becomes a universal AXIS-LOCK (owner, 2026-07-11, exploratory):** today
+`selBand` (box/vertical/horizontal/region) only shapes the marquee sweep + picks the
+slice axis. Proposal: **rename region/time/pitch → xy / x / y** (default xy) and let the
+band govern MOVE's degrees of freedom too:
+- **x** selected → move constrained to the x (time) axis only.
+- **y** selected → move constrained to the y (pitch) axis only.
+- **xy** (region, default) → move freely in both.
+
+Same shape as select-is-scope: ONE persistent selector, many verbs read it (marquee
+sweep axis, slice axis, now move DOF). Pointer-first axis-lock — replaces the
+Shift-to-constrain modifier other apps use, honoring the no-keyboard-required law.
+`box` vs `region` (free-rect vs region-snapped) stay distinct for marquee/slice but both
+read as "xy / both axes" for move. Not settled; affects both `move` and `slice`.
