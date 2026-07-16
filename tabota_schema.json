@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://tabota.org/schema/v2.0",
+  "$id": "https://tabota.org/schema/v2.1",
   "title": "Tabota Score Format v2",
   "description": "A universal description language for time-based events. v2 collapses the v1.5 hierarchy (Section / Track / ChildSection / Event) into a SINGLE recursive type: the Event. Everything in a score is an Event. An Event is a bag of optional, stackable facets \u2014 frame (the old 'regime' role), value, position, extent, containment, reference, payload. None are required: an empty Event {} is valid. This is a language of description, not a scheduler: it may express relations that are under-determined, over-determined, indeterminate, or paradoxical (cyclic). Realizers (e.g. Tabota Roll, MIDI export) attempt to find a consistent assignment of times and pitches; where none exists, the realizer reports it. The schema permits what the realizer may refuse. v2.0 also carries tempo as a value (TempoValue) on pitchless tempo-track Events, lets extent name its own coordinate (Extent.in), gives metered frames a metric phase (offset), and allows a regime to hold several named secondary coordinate charts (lenses) that Events opt into.",
   "type": "object",
@@ -227,6 +227,10 @@
         "tempo": {
           "$ref": "#/definitions/TempoValue",
           "description": "A tempo: the metric chart's rate, i.e. the exchange rate from this regime's beats to seconds. Carried by pitchless Events that form a regime's tempo track."
+        },
+        "curve": {
+          "$ref": "#/definitions/CurveValue",
+          "description": "A generic automation envelope over the clock. The universal drawn-curve primitive (CyberScotoma's bloom, Proteus's morph curve, any effect-parameter automation) expressed in Tabota language instead of each app hand-rolling its own point editor. Added v2.1, additive per tabota_compat.md Rule 1."
         }
       }
     },
@@ -923,6 +927,83 @@
             "exponential"
           ],
           "default": "linear"
+        }
+      }
+    },
+    "CurveValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A generic automation envelope: an ordered set of {t, v} breakpoints over the clock, each carrying the shape of the segment leaving it. The universal drawn-curve primitive, so effect parameters become automatable lanes in the score rather than private point editors. Added v2.1: additive per tabota_compat.md Rule 1 — older readers ignore it and MUST preserve it (Rule 2).",
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/CurvePoint"
+          },
+          "description": "Breakpoints, intended in ascending t. A realizer samples v(t) by interpolating between adjacent points using the earlier point's 'interpolation'."
+        },
+        "in": {
+          "type": "string",
+          "enum": [
+            "seconds",
+            "milliseconds",
+            "minutes",
+            "beats",
+            "measures"
+          ],
+          "description": "Coordinate that each point's 't' is quoted in, overriding the governing frame's own units (mirrors Extent.in). Lets a curve be pinned chronally over a metered regime, or metrically over a chronal one."
+        },
+        "range": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Advisory semantic range of 'v', for normalization / UI scaling / display. Does not clamp; a realizer MAY use it to map v onto a parameter's real units.",
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "unit": {
+              "type": "string",
+              "description": "Free-text unit label for v (e.g. 'frames', 'cells', '0..1')."
+            }
+          }
+        }
+      }
+    },
+    "CurvePoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "v"
+      ],
+      "properties": {
+        "t": {
+          "type": "number",
+          "description": "Position on the clock, in the governing frame's units (or CurveValue.in)."
+        },
+        "v": {
+          "type": "number",
+          "description": "The automated value at t."
+        },
+        "interpolation": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "ease-in",
+            "ease-out",
+            "ease-in-out",
+            "step",
+            "exponential"
+          ],
+          "default": "linear",
+          "description": "Shape of the segment from THIS point to the next. The last point's value is held thereafter, so its interpolation is moot."
         }
       }
     },

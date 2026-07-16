@@ -117,9 +117,13 @@ input[type=number].w48{width:48px}
 .stage{position:relative; flex:1; min-height:0; overflow:hidden; background:var(--note-bg)}
 #roll{display:block; width:100%; height:100%; cursor:crosshair; touch-action:none}
 .stage.tool-select #roll{cursor:default}
-.stage.tool-point #roll{cursor:crosshair}
+.stage.tool-move #roll{cursor:default}
+.stage.tool-draw #roll{cursor:crosshair}
 .stage.tool-erase #roll{cursor:not-allowed}
 .stage.tool-pan #roll{cursor:grab}
+.seg.dim{opacity:.35; pointer-events:none}   /* selMode chips are select's — they grey out under other verbs */
+#targetPill.new{color:var(--tide); font-weight:600}
+#autoSelBtn.on{background:var(--ember); border-color:var(--ember); color:#fff}
 
 /* footer / status + io */
 footer{
@@ -311,23 +315,35 @@ select:disabled{
 
 <div class="toolbar">
   <div class="group seg" id="tools">
-    <button data-tool="select" title="Select / move / resize whole notes — object level (V)">▣ select</button>
-    <button data-tool="point" title="Point tool — select/move points; click a curve body to add (drag to place, release to commit); double-click a point to delete (A)">⋯ point</button>
-    <button data-tool="hold" class="on" title="Hold note — point type (H)">━ hold</button>
-    <button data-tool="glide" title="Glide — drag start→end (G)">╱ glide</button>
-    <button data-tool="pen" title="Pen — click to place points, double-click/Enter to finish (P)">✎ pen</button>
-    <button data-tool="free" title="Freehand contour (F)">∿ free</button>
+    <button data-tool="select" title="Select — binds the SCOPE the other verbs act on. Click a point / a curve / marquee; never moves anything (V)">▣ select</button>
+    <button data-tool="move" title="Move — translate the selection (points, endpoints, whole notes). End-handle of a whole-selected note = time-only resize (M)">✥ move</button>
+    <button data-tool="draw" class="on" title="Draw — deposit points. Empty selection → a NEW note; selection present → deposits INTO it, never a new note (D)">✎ draw</button>
     <button data-tool="erase" title="Erase (E)">⌫ erase</button>
     <button data-tool="slice" title="Slice — click to cut at that spot; the band picks the axis: time, pitch, or region (= both). Box doesn't slice. (S)">⌿ slice</button>
     <button data-tool="pan" title="Pan (space-drag)">✋ pan</button>
   </div>
   <div class="group">
+    <label>draw</label>
+    <div class="seg" id="drawModeSeg">
+      <button data-dm="hold" class="on" title="Hold — level deposit. New: flat note, drag sets length. Into a curve: adds a point glued to the curve's pitch, drag repositions in time only (H)">━ hold</button>
+      <button data-dm="glide" title="Glide — new: drag start→end. Into a curve: ghost-add a point, drag places it, release commits (G)">╱ glide</button>
+      <button data-dm="pen" title="Pen — new: click successive points, double-click/Enter to finish. Into a curve: each tap commits one point (P)">✎ pen</button>
+      <button data-dm="free" title="Free — new: scribble a contour. Into a curve: the swept span is REDRAWN by the scribble (F)">∿ free</button>
+    </div>
+  </div>
+  <div class="group">
     <label>select</label>
-    <div class="seg" id="selModeSeg">
+    <div class="seg dim" id="selModeSeg">
       <button data-m="replace" class="on" title="Replace — a click or marquee starts a fresh selection">replace</button>
       <button data-m="include" title="Include — clicks &amp; marquees add to the selection (or hold Shift)">＋ incl</button>
       <button data-m="exclude" title="Exclude — clicks &amp; marquees remove from the selection (or hold Alt)">− excl</button>
     </div>
+    <button id="deselBtn" title="Deselect all — empties the scope, so draw makes NEW notes again (Esc)">⊘</button>
+    <button id="selAllBtn" title="Select every note (Ctrl-A)">⊞</button>
+  </div>
+  <div class="group">
+    <div class="pill" id="targetPill" title="What the next gesture will affect">draw → NEW</div>
+    <button id="autoSelBtn" title="Auto-select — cursor proximity picks the target instead of the selection (Photoshop-style). Trades safety for convenience">◎ auto</button>
   </div>
 
   <div class="group">
@@ -431,7 +447,7 @@ select:disabled{
   </div>
 
   <div class="group legend" style="gap:9px">
-    <span style="color:var(--ink-faint)">color=voice · ▬hold ╱glide ∿free</span>
+    <span style="color:var(--ink-faint)">color=voice</span>
     <span id="voiceLegend" style="display:flex;gap:6px"></span>
   </div>
 </div>
@@ -453,7 +469,7 @@ select:disabled{
 </div>
 
 <canvas id="scrub" title="playhead lane — click or drag to place the playhead (the ruler above the grid stays a scroll handle)"></canvas>
-<div class="stage tool-hold" id="stage">
+<div class="stage tool-draw" id="stage">
   <canvas id="roll"></canvas>
   <div id="tempoPanel" class="tcollapsed" title="tempo track — bpm over the score. metered regions only; free time has no tempo.">
     <div id="tempoHead">
@@ -595,7 +611,7 @@ function pitchAt(note,frac){            // hz at normalized position 0..1
     if(frac>=p[i].t && frac<=p[i+1].t){
       const span=(p[i+1].t-p[i].t)||1e-9;
       let k=(frac-p[i].t)/span;
-      if(note.type==='glide') k=shapeK(k, p[i].curve || note.curve || 'linear');   // per-segment curve
+      k=shapeK(k, p[i].curve || note.curve || 'linear');   // per-segment curve (linear = identity, so applies to every note)
       // interpolate in log-frequency (linear in cents) for musical glides
       const m0=Math.log2(p[i].hz), m1=Math.log2(p[i+1].hz);
       return Math.pow(2, m0+(m1-m0)*k);
@@ -678,7 +694,8 @@ function buildMidi(notes, opts){
       const overflow = maxAbsDelta>range+1e-9;
       if(overflow) warnings.push(`voice ${v} note @${startBeat.toFixed(2)} reaches ±${maxAbsDelta.toFixed(2)}st — hard-walled at ±${range}st`);
       report.push({
-        voice:v, ch:ch+1, start:startBeat, dur:durBeat, type:n.type,
+        voice:v, ch:ch+1, start:startBeat, dur:durBeat,
+        type:(n.pts.length>2?'curve':(Math.abs(1200*Math.log2(n.pts[n.pts.length-1].hz/n.pts[0].hz))<0.5?'flat':'line')),
         startHz, base, baseName:midiToName(base),
         cents:(freqToMidi(startHz,a4)-base)*100,
         pb0:bends[0].pb14, span:maxAbsDelta, overflow, clipped
@@ -720,16 +737,16 @@ function notesFromMidi(arrbuf, importRange, a4){
       }
       const hzs=pts.map(p=>p.hz);
       const flat=hzs.every(h=>Math.abs(1200*Math.log2(h/hzs[0]))<1.0);
-      let type, P;
-      if(flat){ type='hold'; P=[{t:0,hz:hzs[0]}]; }
+      let P;
+      if(flat){ P=[{t:0,hz:hzs[0]},{t:1,hz:hzs[0]}]; }   // flat = a level 2-point note
       else {
         const m0=Math.log2(hzs[0]), m1=Math.log2(hzs[hzs.length-1]);
         let lin=true;
         for(let s=0;s<=steps;s++){ const exp=m0+(m1-m0)*(s/steps); if(Math.abs((Math.log2(hzs[s])-exp))*1200>4){lin=false;break;} }
-        if(lin){ type='glide'; P=[{t:0,hz:hzs[0]},{t:1,hz:hzs[hzs.length-1]}]; }
-        else { type='free'; P=pts.map(p=>({t:p.t,hz:p.hz})); }
+        if(lin){ P=[{t:0,hz:hzs[0]},{t:1,hz:hzs[hzs.length-1]}]; }
+        else { P=pts.map(p=>({t:p.t,hz:p.hz})); }
       }
-      out.push({id:NID++, start:startBeat, dur:durBeat, type, vel:Math.round((nt.velocity||0.75)*127), pts:P, voice});
+      out.push({id:NID++, start:startBeat, dur:durBeat, vel:Math.round((nt.velocity||0.75)*127), pts:P, voice});
     });
   });
   return {notes:out, bpm, voices:voiceCounter};
@@ -756,8 +773,10 @@ const view={
   get pxPerBeat(){ return this.pxPerSec/unitsPerSec(mainSystem()); },  // px per region-local UNIT (a 1/sigDen note), derived per the active chart
   scrollX:0, scrollY:0,                // px
   midiMin:24, midiMax:108,             // C1..C8
-  tool:'hold', timeRegime:'meter', pitchRegime:'scale',
+  tool:'draw', timeRegime:'meter', pitchRegime:'scale',
 };
+let drawMode='hold';                 // draw's arity: 'hold' | 'glide' | 'pen' | 'free' — explicit chips, mobile-first
+let autoSelect=false;                // OFF (careful, default): selection is authoritative. ON: cursor proximity picks the target
 const settings={
   get bpm(){return +bpm.value||120;}, get sigNum(){return +sigNum.value||4;},
   get sigDen(){return +sigDen.value||4;}, get a4(){return +a4.value||440;},
@@ -1094,11 +1113,11 @@ function mergeSel(note, idxSet, op){ // op: 'add' | 'sub'
   if(op==='sub'){ for(const i of idxSet) cur.delete(i); } else { for(const i of idxSet) cur.add(i); }
   selection.delete(note.id); ptSel.delete(note);
   if(cur.size===0) return;
-  if(cur.size===note.pts.length || note.type==='hold') selection.add(note.id);
+  if(cur.size===note.pts.length) selection.add(note.id);
   else ptSel.set(note,cur);
 }
 function entityIndices(h){           // the point indices a hit entity represents
-  if(h.kind==='point') return [h.note.type==='hold'?0:h.idx];
+  if(h.kind==='point') return [h.idx];
   if(h.kind==='segment') return [h.seg, h.seg+1];
   return h.note.pts.map((_,i)=>i);   // whole note (aura)
 }
@@ -1800,8 +1819,7 @@ function noteAt(px,py){
   for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; _ctxRegion=regionById(n.region);
     const x0=beatToX(n.start), x1=beatToX(n.start+n.dur);
     if(px<x0-6||px>x1+6) continue;
-    if(n.type==='hold'){ const y=hzToY(pitchAt(n,0)); if(Math.abs(py-y)<=Math.max(6,view.pxPerSemi*0.5)) return n; }
-    else { const f=Math.max(0,Math.min(1,(px-x0)/Math.max(1,x1-x0))); const y=hzToY(pitchAt(n,f)); if(Math.abs(py-y)<=7) return n; }
+    const f=Math.max(0,Math.min(1,(px-x0)/Math.max(1,x1-x0))); const y=hzToY(pitchAt(n,f)); if(Math.abs(py-y)<=7) return n;
   }
   return null;
   } finally { _ctxRegion=null; }
@@ -1839,14 +1857,6 @@ function selectHit(px,py){
   for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; _ctxRegion=regionById(n.region);
     const x0=beatToX(n.start), x1=beatToX(n.start+Math.max(n.dur,1e-4));
     if(px<x0-HIT_AURA||px>x1+HIT_AURA) continue;
-    if(n.type==='hold'){
-      const y=hzToY(pitchAt(n,0));
-      if(py<y-HIT_AURA||py>y+HIT_AURA) continue;
-      const he=holdEdge(n,px);                       // x near start or end handle
-      if(he) return {note:n,kind:'point',idx:(he==='start'?0:1),edge:he};
-      const ch=curveHit(n,px,py); if(ch.dist<=HIT_AURA) return {note:n,kind:'note'};
-      continue;
-    }
     const pi=pointHitIndex(n,px,py); if(pi>=0) return {note:n,kind:'point',idx:pi};
     const ch=curveHit(n,px,py);
     if(ch.dist<=HIT_THIN) return {note:n,kind:'segment',seg:ch.seg};
@@ -1892,15 +1902,15 @@ cv.addEventListener('pointerdown',e=>{
     if(selBand==='horizontal'||selBand==='region'){ splitPitchAt(snappedSec); }
     return; }
 
-  // PEN: click to place successive points (double-click / Enter / Esc to finish)
-  if(t==='pen'){
+  // PEN (new-note session): click to place successive points (double-click / Enter / Esc to finish)
+  function penTapNew(){
     const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
     const penHome = penNote ? regionById(penNote.region) : activeRegion();
     let beat=xToBeatSnappedIn(p.x, penHome);
     if(!penNote){
       pushHistory();
       penRaw=[{beat,hz}];
-      penNote={id:NID++, start:beat, dur:0.0001, type:'glide', curve:depositCurve, vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
+      penNote={id:NID++, start:beat, dur:0.0001, curve:depositCurve, vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
       notes.push(penNote); penNote.voice=autoVoice(penNote);
       selection.clear(); selection.add(penNote.id);
     } else {
@@ -1912,112 +1922,164 @@ cv.addEventListener('pointerdown',e=>{
       beat=clampBeatIn(beat, penHome);
       penRaw.push({beat,hz}); rebuildPoints(penNote,penRaw); penNote.voice=autoVoice(penNote);
     }
-    changed(); return;
+    changed();
   }
 
   const hit=noteAt(p.x,p.y);
   if(t==='erase'){ if(hit){ pushHistory(); notes=notes.filter(n=>n!==hit); selection.delete(hit.id); changed(); } return; }
 
-  // ▣ SELECT — black arrow: WHOLE-NOTE (object) level only. Never grabs a lone point/segment.
+  // ▣ SELECT — the scope-binder. Binds points / segments / whole notes; NEVER moves anything.
+  // (Selection is SCOPE, tools are VERBS — Dev-2 contract. The set-op chips live here and only here.)
   if(t==='select'){
-    dragHist=histSnapshot();                              // capture pre-state; committed on pointerup if notes change
-    const h=selectHit(p.x,p.y);
-    const mode = e.shiftKey ? 'include' : (e.altKey ? 'exclude' : selMode);
-    const isEnd = h && h.kind==='point' && (h.note.type==='hold' || h.idx===0 || h.idx===h.note.pts.length-1);
-    if(h && (mode==='include'||mode==='exclude')){        // set-op on the WHOLE note
-      segSel=null; pointSel=null; ptSel=new Map();
-      if(mode==='exclude') selection.delete(h.note.id); else selection.add(h.note.id);
-      tempoSel.clear();
-      drag = (mode==='include' && selection.size>0) ? startGroupMove(p) : null;
-      changed(); return;
-    }
-    if(h){
-      ptSel=new Map(); segSel=null; pointSel=null; tempoSel.clear();
-      if(isEnd){                                          // end-handle → TIME-ONLY resize (pitch frozen, fork (i))
-        if(!selection.has(h.note.id)) selection.clear();
-        selection.add(h.note.id);
-        drag={mode:'resize', freezePitch:true, note:h.note, ptIdx:(h.note.type==='hold'?0:h.idx),
-              ep:(h.note.type==='hold'?(h.edge||holdEdge(h.note,p.x)):null), sx:p.x, sy:p.y, o:snapshot(h.note)};
-      } else if(selection.size>1 && selection.has(h.note.id)){   // grab & move the whole multi-note selection
-        drag=startGroupMove(p);
-      } else {                                            // single whole-note move (rigid, all points)
-        if(!selection.has(h.note.id)) selection.clear();
-        selection.add(h.note.id);
-        drag={mode:'move', note:h.note, sx:p.x, sy:p.y, o:snapshot(h.note)};
-      }
-    } else {
-      const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
-      if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
-      drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand,whole:true};  // marquee selects WHOLE notes
-    }
-    changed(); return;
-  }
-
-  // ⋯ POINT — white arrow: sub-object. Hit-kind disambiguates (vector-pen convention).
-  if(t==='point'){
     dragHist=histSnapshot();
     const h=selectHit(p.x,p.y);
     const mode = e.shiftKey ? 'include' : (e.altKey ? 'exclude' : selMode);
-    if(h && (mode==='include'||mode==='exclude')){        // set-op on the hit entity's points
-      segSel=null; pointSel=null;
-      mergeSel(h.note, new Set(entityIndices(h)), mode==='exclude'?'sub':'add');
-      drag = (mode==='include' && (ptSel.size>0||selection.size>0)) ? startGroupMove(p) : null;
+    if(h){
+      tempoSel.clear(); segSel=null;
+      if(mode==='replace'){ selection.clear(); ptSel=new Map(); pointSel=null; }
+      if(h.kind==='note' && mode!=='exclude') selection.add(h.note.id);          // aura/body → whole note
+      else mergeSel(h.note, new Set(entityIndices(h)), mode==='exclude'?'sub':'add');  // point/segment → granular (promotes at full coverage)
+      if(h.kind==='point' && mode!=='exclude') pointSel={note:h.note, idx:h.idx};      // feed the Hz/note editor
       changed(); return;
     }
-    if(h && h.kind==='point'){                            // select + move this point (full time+pitch)
-      const multi = ptSel.size>0 || selection.size>1;
-      const hitInSel = ptSelHas(h.note,h.idx)||selection.has(h.note.id);
-      if(multi && hitInSel){ segSel=null; pointSel=null; drag=startGroupMove(p); }
-      else {
-        ptSel=new Map(); tempoSel.clear(); segSel=null;
-        if(!selection.has(h.note.id)) selection.clear();
-        selection.add(h.note.id);
-        pointSel={note:h.note, idx:(h.note.type==='hold'?0:h.idx)};
-        drag={mode:'resize', freezePitch:false, note:h.note, ptIdx:h.idx,
-              ep:(h.note.type==='hold'?(h.edge||holdEdge(h.note,p.x)):null), sx:p.x, sy:p.y, o:snapshot(h.note)};
-      }
-      changed(); return;
-    }
-    if(h && (h.kind==='segment'||h.kind==='note') && h.note.type!=='hold'){   // ghost-add on the curve body
-      const hit=h.note;
-      const t2=Math.max(0.0001,Math.min(0.9999,(xToBeatIn(p.x,regionById(hit.region))-hit.start)/Math.max(1e-6,hit.dur)));
-      const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
-      let i=0; while(i<hit.pts.length && hit.pts[i].t<t2) i++;
-      const np={t:t2,hz,curve:depositCurve}; const A=(i>0)?hit.pts[i-1]:null; const orig=A?segCurve(hit,i-1):(hit.curve||'linear');
-      hit.pts.splice(i,0,np); applyAffect(A,np,orig);      // tentative insert; same held drag repositions it, release commits
-      ptSel=new Map(); segSel=null; tempoSel.clear();
-      selection.clear(); selection.add(hit.id);
-      pointSel={note:hit, idx:i};
-      drag={mode:'resize', freezePitch:false, note:hit, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(hit), ghost:{note:hit,idx:i}};
-      changed(); return;
-    }
-    // empty (or a bare hold body) → marquee point-selection
+    // empty → marquee: selects POINTS; full coverage of a note promotes to the whole object (mergeSel)
     const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
     if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
     drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand};
     changed(); return;
   }
 
-  // creation tools
-  dragHist=histSnapshot();
-  const beat=xToBeatSnappedIn(p.x, activeRegion());
-  const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
-  if(t==='hold'){
-    const n={id:NID++, start:beat, dur:settings.defLen, type:'hold', vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
-    notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-    drag={mode:'newHoldLen', note:n, sx:p.x, baseStart:beat};
-  } else if(t==='glide'){
-    const n={id:NID++, start:beat, dur:Math.max(0.0625,settings.defLen), type:'glide', curve:depositCurve,
-             vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
-    notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-    drag={mode:'newGlide', note:n, sx:p.x, sy:p.y, baseStart:beat, startHz:hz};
-  } else if(t==='free'){
-    const n={id:NID++, start:beat, dur:0.0001, type:'free', vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
-    notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-    drag={mode:'newFree', note:n, baseStart:beat, raw:[{beat,hz}]};
+  // ✥ MOVE — translate the selection. Scope decides an end-handle's meaning:
+  // whole note selected → time-only resize (pitch frozen); point selected → full time+pitch move.
+  if(t==='move'){
+    dragHist=histSnapshot();
+    const h=selectHit(p.x,p.y);
+    if(autoSelect){                                       // ON: cursor proximity is authoritative; it rebinds the scope to what it grabs
+      if(!h) return;
+      segSel=null; tempoSel.clear(); selection.clear(); ptSel=new Map(); pointSel=null;
+      if(h.kind==='point'){
+        mergeSel(h.note, new Set([h.idx]), 'add'); pointSel={note:h.note, idx:h.idx};
+        drag={mode:'resize', freezePitch:false, note:h.note, ptIdx:h.idx, ep:null, sx:p.x, sy:p.y, o:snapshot(h.note)};
+      } else { selection.add(h.note.id); drag=startGroupMove(p); }
+      changed(); return;
+    }
+    const selPresent = selection.size>0 || ptSel.size>0;
+    if(!selPresent){ flash('nothing selected — bind a scope with ▣ (or turn ◎ auto on)'); return; }
+    if(h && h.kind==='point' && selection.has(h.note.id) && (h.idx===0 || h.idx===h.note.pts.length-1)){
+      // end-handle of a WHOLE-selected note → time-only resize (Stage-1 frozen-pitch, now scope-derived)
+      drag={mode:'resize', freezePitch:true, note:h.note, ptIdx:h.idx, ep:null, sx:p.x, sy:p.y, o:snapshot(h.note)};
+      changed(); return;
+    }
+    drag=startGroupMove(p);                               // drag anywhere translates the whole scope (leader-snap, seconds-rigid)
+    changed(); return;
   }
-  changed();
+
+  // ✎ DRAW — deposit, scoped by selection. HARD LAW (auto OFF): selection present ⇒ deposit
+  // INTO it, never a new note; deposits land only within the target's [start,end] extent.
+  if(t==='draw'){
+    if(drawMode==='pen' && penNote){ penTapNew(); return; }        // live pen session keeps its taps
+    let target=null;
+    if(autoSelect){
+      const h=selectHit(p.x,p.y); target = h ? h.note : null;      // ON: curve under cursor, else NEW
+    } else if(selection.size>0 || ptSel.size>0){
+      target=depositTargetAt(p);                                   // OFF: topmost selected note whose extent holds the click
+      if(!target){ flash('outside the selection’s extent — deselect (⊘) to draw a NEW note'); return; }
+    }
+    if(target){ depositIntoNote(target, drawMode, p); return; }
+    // empty scope → NEW note (deposit mechanics unchanged)
+    if(drawMode==='pen'){ penTapNew(); return; }
+    dragHist=histSnapshot();
+    const beat=xToBeatSnappedIn(p.x, activeRegion());
+    const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+    if(drawMode==='hold'){                               // hold = a flat 2-point note; the drag only sets its length (pitch stays level)
+      const n={id:NID++, start:beat, dur:settings.defLen, vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
+      notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
+      drag={mode:'newHoldLen', note:n, sx:p.x, baseStart:beat};
+    } else if(drawMode==='glide'){
+      const n={id:NID++, start:beat, dur:Math.max(0.0625,settings.defLen), curve:depositCurve,
+               vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
+      notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
+      drag={mode:'newGlide', note:n, sx:p.x, sy:p.y, baseStart:beat, startHz:hz};
+    } else if(drawMode==='free'){
+      const n={id:NID++, start:beat, dur:0.0001, vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
+      notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
+      drag={mode:'newFree', note:n, baseStart:beat, raw:[{beat,hz}]};
+    }
+    changed();
+  }
 });
+
+/* ---- draw-into-existing: the onto-existing column of the tool matrix ----
+   Target resolution (auto OFF): the topmost selected note whose extent contains the click.
+   Containment is tested in RENDERED px (beatToX under the note's own chart) so the target
+   is exactly what is drawn — sibling of THE GRID LAW; a time-space re-derivation can
+   diverge for notes extrapolated past their home region's end. */
+function depositTargetAt(p){
+  const pool=new Set(selection);
+  for(const n of ptSel.keys()) pool.add(n.id);
+  try{
+    for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; if(!pool.has(n.id)) continue;
+      _ctxRegion=regionById(n.region);
+      const x0=beatToX(n.start), x1=beatToX(n.start+Math.max(n.dur,1e-4));
+      if(p.x>=x0 && p.x<=x1) return n;
+    }
+  } finally{ _ctxRegion=null; }
+  return null;
+}
+/* One deposit dispatch per draw mode. Extent-confined by construction (t clamped inside).
+   hold  → ghost-add a point GLUED to the curve's pitch; the held drag repositions time only.
+   glide → ghost-add at the cursor; drag places freely; release commits (the Stage-1 mechanic).
+   pen   → each tap commits one point immediately (undoable per tap).
+   free  → sweep; on release the swept span is REPLACED by the scribble (aliquoto OVR/bake prior art). */
+function depositIntoNote(n, dm, p){
+  const home=regionById(n.region);
+  const t2=Math.max(0.0001,Math.min(0.9999,(xToBeatIn(p.x,home)-n.start)/Math.max(1e-6,n.dur)));
+  if(dm==='hold' || dm==='glide'){
+    dragHist=histSnapshot();
+    const glued = dm==='hold';
+    const hz = glued ? pitchAt(n,t2) : snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+    let i=0; while(i<n.pts.length && n.pts[i].t<t2) i++;
+    const np={t:t2,hz,curve:depositCurve}; const A=(i>0)?n.pts[i-1]:null; const orig=A?segCurve(n,i-1):(n.curve||'linear');
+    n.pts.splice(i,0,np); applyAffect(A,np,orig);          // tentative insert; the held drag repositions, release commits
+    segSel=null; tempoSel.clear(); pointSel={note:n, idx:i};
+    drag={mode:'resize', freezePitch:glued, note:n, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(n), ghost:{note:n,idx:i}};
+    changed(); return;
+  }
+  if(dm==='pen'){
+    pushHistory();
+    const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+    let i=0; while(i<n.pts.length && n.pts[i].t<t2) i++;
+    const np={t:t2,hz,curve:depositCurve}; const A=(i>0)?n.pts[i-1]:null; const orig=A?segCurve(n,i-1):(n.curve||'linear');
+    n.pts.splice(i,0,np); applyAffect(A,np,orig);          // committed — each tap is its own undo step
+    segSel=null; tempoSel.clear(); pointSel={note:n, idx:i};
+    changed(); return;
+  }
+  if(dm==='free'){
+    dragHist=histSnapshot();
+    const b=Math.max(n.start, Math.min(n.start+n.dur, xToBeatIn(p.x,home)));
+    const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+    drag={mode:'freeOnto', note:n, raw:[{beat:b,hz}]};
+    changed(); return;
+  }
+}
+/* free-onto commit: replace the swept span's points with the (decimated) scribble.
+   The note's extent NEVER changes (deposit-confined law); untouched points keep their curves. */
+function commitFreeOnto(d){
+  const n=d.note; if(d.raw.length<2) return;               // a bare tap sweeps nothing
+  const s=d.raw[0].beat, en=d.raw[d.raw.length-1].beat; if(en-s<1e-9) return;
+  const abs=n.pts.map(q=>({beat:n.start+q.t*n.dur, hz:q.hz, curve:q.curve}));
+  const minStep=(en-s)/120;                                // decimate like rebuildFree
+  const dec=[d.raw[0]]; for(let i=1;i<d.raw.length;i++){ if(d.raw[i].beat-dec[dec.length-1].beat>=minStep) dec.push(d.raw[i]); }
+  if(dec[dec.length-1]!==d.raw[d.raw.length-1]) dec.push(d.raw[d.raw.length-1]);
+  const merged=[ ...abs.filter(q=>q.beat<=s+1e-9), ...dec.map(q=>({beat:q.beat,hz:q.hz})), ...abs.filter(q=>q.beat>=en-1e-9) ]
+    .sort((a,b)=>a.beat-b.beat);
+  const out=[]; for(const q of merged){ const l=out[out.length-1];
+    if(l && Math.abs(q.beat-l.beat)<1e-6){ l.hz=q.hz; l.curve=undefined; continue; }  // sweep overwrites a coincident point
+    out.push({...q}); }
+  if(out.length<2) return;
+  n.pts=out.map(q=>{ const o={t:Math.max(0,Math.min(1,(q.beat-n.start)/Math.max(1e-6,n.dur))), hz:q.hz}; if(q.curve) o.curve=q.curve; return o; });
+  pointSel=null;
+}
 
 // pen helper: rebuild normalized pts from absolute [{beat,hz}] (no decimation — exact points)
 function rebuildPoints(note,raw){
@@ -2032,9 +2094,6 @@ function finalizePen(){
   penNote=null; penRaw=null; changed();
 }
 
-function holdEdge(n,px){ const prev=_ctxRegion; _ctxRegion=regionById(n.region);
-  try{ const x1=beatToX(n.start+n.dur); if(Math.abs(px-x1)<7) return 'end'; const x0=beatToX(n.start); if(Math.abs(px-x0)<7) return 'start'; return null; }
-  finally{ _ctxRegion=prev; } }
 function snapshot(n){ return JSON.parse(JSON.stringify(n)); }
 function startGroupMove(p){
   const targets=new Map();
@@ -2052,12 +2111,10 @@ function startGroupMove(p){
 function removePoints(note,idxSet){     // returns false if the note should be removed entirely
   const abs=note.pts.map(q=>({beat:note.start+q.t*note.dur, hz:q.hz, curve:q.curve}));
   const kept=abs.filter((_,i)=>!idxSet.has(i));
-  if(kept.length<1) return false;
-  if(kept.length===1){ note.type='hold'; note.start=kept[0].beat; if(!(note.dur>0)) note.dur=settings.defLen; note.pts=[{t:0,hz:kept[0].hz}]; return true; }
+  if(kept.length<2) return false;       // every note is a >=2-point curve; deleting down to 1 removes the note
   const start=Math.min(...kept.map(q=>q.beat)), end=Math.max(...kept.map(q=>q.beat)), dur=Math.max(1e-4,end-start);
   note.start=start; note.dur=dur;
   note.pts=kept.map(q=>{ const o={t:(q.beat-start)/dur, hz:q.hz}; if(q.curve) o.curve=q.curve; return o; });
-  if(note.type==='hold') note.type='glide';
   return true;
 }
 function deleteSelection(){
@@ -2112,6 +2169,20 @@ cv.addEventListener('pointermove',e=>{
     const b=xToBeatClampedIn(p.x, regionById(d.note.region)); const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
     if(b>d.baseStart){ d.raw.push({beat:b,hz}); rebuildFree(d.note,d.raw); d.note.voice=autoVoice(d.note); }
     draw(); updateStatus(); return;
+  }
+  if(d.mode==='freeOnto'){                 // sweep over an existing curve — extent-clamped, x-monotonic; commit replaces the span
+    const n=d.note, home=regionById(n.region);
+    const b=Math.max(n.start, Math.min(n.start+n.dur, xToBeatIn(p.x,home)));
+    const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
+    if(b>d.raw[d.raw.length-1].beat) d.raw.push({beat:b,hz});
+    draw();
+    // ghost preview: the scribble as a dashed ember overlay (tentative until release)
+    const prev=_ctxRegion; _ctxRegion=home;
+    try{ ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle=col('--ember'); ctx.lineWidth=2; ctx.globalAlpha=.8;
+      ctx.beginPath(); d.raw.forEach((q,i)=>{ const x=beatToX(q.beat), y=hzToY(q.hz); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+      ctx.stroke(); ctx.restore(); }
+    finally{ _ctxRegion=prev; }
+    updateStatus(); return;
   }
   if(d.mode==='ptMove'){
     const rawDm=-(p.y-d.sy)/view.pxPerSemi;
@@ -2180,20 +2251,15 @@ cv.addEventListener('pointermove',e=>{
   }
   if(d.mode==='resize'){
     const n=d.note, home=regionById(n.region);
-    if(n.type==='hold'){
-      if(d.ep==='end'){ const b=xToBeatSnappedIn(p.x,home); n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); }
-      else { const b=xToBeatSnappedIn(p.x,home); const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; }
-    } else {
-      const idx=d.ptIdx, last=n.pts.length-1;
-      const hz = d.freezePitch ? null : snapPitchHzAt(yToHz(p.y), xToSec(p.x));   // select-tool end-resize freezes pitch
-      const b=xToBeatSnappedIn(p.x,home);
-      if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; if(hz!=null) n.pts[0]={...n.pts[0],hz}; }
-      else if(idx===last){ n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); if(hz!=null) n.pts[last]={...n.pts[last],hz}; }
-      else { // interior point — move in (t,hz) between its neighbors, note extent unchanged
-        let nt=(b-n.start)/Math.max(1e-6,n.dur);
-        nt=Math.max(n.pts[idx-1].t+1e-4, Math.min(n.pts[idx+1].t-1e-4, nt));
-        n.pts[idx] = hz!=null ? {...n.pts[idx], t:nt, hz} : {...n.pts[idx], t:nt};
-      }
+    const idx=d.ptIdx, last=n.pts.length-1;
+    const hz = d.freezePitch ? null : snapPitchHzAt(yToHz(p.y), xToSec(p.x));   // select-tool end-resize freezes pitch
+    const b=xToBeatSnappedIn(p.x,home);
+    if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; if(hz!=null) n.pts[0]={...n.pts[0],hz}; }
+    else if(idx===last){ n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); if(hz!=null) n.pts[last]={...n.pts[last],hz}; }
+    else { // interior point — move in (t,hz) between its neighbors, note extent unchanged
+      let nt=(b-n.start)/Math.max(1e-6,n.dur);
+      nt=Math.max(n.pts[idx-1].t+1e-4, Math.min(n.pts[idx+1].t-1e-4, nt));
+      n.pts[idx] = hz!=null ? {...n.pts[idx], t:nt, hz} : {...n.pts[idx], t:nt};
     }
     draw(); updateStatus(); return;
   }
@@ -2226,13 +2292,19 @@ function rebuildFree(note,raw){
 function hoverFeedback(p){
   if(view.tool==='select'){
     const h=selectHit(p.x,p.y);
-    const isEnd = h && h.kind==='point' && (h.note.type==='hold' || h.idx===0 || h.idx===h.note.pts.length-1);
-    cv.style.cursor = !h ? 'default' : (isEnd ? 'ew-resize' : 'move');   // ends resize (time only); body moves
+    cv.style.cursor = h ? 'pointer' : 'default';                          // binder: everything hit is selectable
     return;
   }
-  if(view.tool==='point'){
+  if(view.tool==='move'){
     const h=selectHit(p.x,p.y);
-    cv.style.cursor = !h ? 'default' : (h.kind==='point' ? 'pointer' : 'crosshair');   // point selects/moves; body adds
+    const selPresent = selection.size>0 || ptSel.size>0;
+    const isEnd = h && h.kind==='point' && selection.has(h.note.id) && (h.idx===0 || h.idx===h.note.pts.length-1);
+    cv.style.cursor = isEnd ? 'ew-resize' : ((selPresent || (autoSelect&&h)) ? 'move' : 'default');
+    return;
+  }
+  if(view.tool==='draw'){
+    cv.style.cursor='crosshair';
+    if(autoSelect) updateTargetPill(p);                                   // pill reads the hover target live in auto mode
     return;
   }
 }
@@ -2249,10 +2321,11 @@ cv.addEventListener('pointerup',e=>{
       pitchRegions.sort((a,b)=>a.startSec-b.startSec);
       flash('tuning boundary moved'); }
     if(drag.mode==='playhead') endScrub();
+    if(drag.mode==='freeOnto'){ commitFreeOnto(drag); }   // replace the swept span (tentative → committed)
     if(!['marquee','boundary','pitchBoundary','pan','scrollGutter','playhead'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
     if((drag.mode==='newGlide'||drag.mode==='newFree'||drag.mode==='newHoldLen')){
-      // discard zero-length frees
-      if(drag.note.type==='free' && drag.note.pts.length<2){ notes=notes.filter(n=>n!==drag.note); }
+      // discard a deposit that never grew past a single point
+      if(drag.note.pts.length<2){ notes=notes.filter(n=>n!==drag.note); }
     }
     stage.classList.remove('tool-pan');
     drag=null; commitDragHist(); changed();
@@ -2264,7 +2337,7 @@ cv.addEventListener('pointerleave',()=>{ lastMouse.inside=false; });
 // double-click: finish the pen, or insert/delete a breakpoint on a glide/free note
 cv.addEventListener('dblclick',e=>{
   if(penNote){ finalizePen(); return; }
-  if(view.tool!=='point') return;                 // point tool owns point delete (add = drag a curve body)
+  if(view.tool!=='move') return;                  // move owns point delete (dblclick a point; deposits live in draw)
   const p=evtPos(e); if(p.x<GUT_L||p.y<GUT_T) return;
   const hit=noteAt(p.x,p.y); if(!hit) return;
   const idx=pointHitIndex(hit,p.x,p.y); if(idx<0) return;   // must land on a point
@@ -2314,8 +2387,7 @@ function commitMarquee(d){
     const nx0=beatToX(n.start), nx1=beatToX(n.start+Math.max(n.dur,1e-4));
     if(nx1<x-2||nx0>x+w+2) continue;
     let hit=new Set();
-    if(n.type==='hold'){ const yy=hzToY(pitchAt(n,0)); if(lineVsRect(nx0,yy,nx1,yy,x,y,w,h)) hit.add(0); }
-    else { for(let i=0;i<n.pts.length-1;i++) if(segHitsRect(n,i,x,y,w,h)){ hit.add(i); hit.add(i+1); } }
+    for(let i=0;i<n.pts.length-1;i++) if(segHitsRect(n,i,x,y,w,h)){ hit.add(i); hit.add(i+1); }
     if(!hit.size) continue;
     if(d.whole){ if(op==='sub') selection.delete(n.id); else selection.add(n.id); }   // select-tool marquee = whole notes
     else mergeSel(n, hit, op);
@@ -2345,14 +2417,35 @@ function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
    ============================================================ */
 document.querySelectorAll('#tools button').forEach(b=>b.addEventListener('click',()=>{
   const t=b.dataset.tool;
-  if(t==='pen' && view.tool==='pen' && penNote){ finalizePen(); return; }  // tap pen again to finish the path
+  if(t==='draw' && view.tool==='draw' && drawMode==='pen' && penNote){ finalizePen(); return; }  // tap draw again to finish the pen path
   setTool(t);
 }));
-function setTool(t){ if(penNote && t!=='pen') finalizePen(); view.tool=t;
-  if(t!=='select' && t!=='point'){ ptSel=new Map(); pointSel=null; segSel=null; }
+function setTool(t){ if(penNote && t!=='draw') finalizePen(); view.tool=t;
+  // SELECTION PERSISTS across tools — it is the SCOPE the verbs read (select binds, move/draw consume)
   document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x.dataset.tool===t));
+  const sm=document.getElementById('selModeSeg'); if(sm) sm.classList.toggle('dim', t!=='select');   // set-op chips are select's alone
   stage.className='stage tool-'+t; cv.style.cursor=''; changed();
 }
+document.querySelectorAll('#drawModeSeg button').forEach(b=>b.addEventListener('click',()=>{
+  const m=b.dataset.dm;
+  if(m==='pen' && drawMode==='pen' && penNote){ finalizePen(); return; }   // tap pen chip again to finish the path
+  setDrawMode(m);
+}));
+function setDrawMode(m){ if(penNote && m!=='pen') finalizePen(); drawMode=m;
+  document.querySelectorAll('#drawModeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.dm===m));
+  if(view.tool!=='draw') setTool('draw'); else changed();
+}
+/* universal scope controls — pointer-first (keys are accelerators only) */
+function deselectAll(){ selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; tempoSel.clear(); changed(); }
+function selectAllNotes(){ segSel=null; pointSel=null; ptSel=new Map(); selection=new Set(notes.map(n=>n.id)); changed(); }
+document.getElementById('deselBtn').onclick=deselectAll;
+document.getElementById('selAllBtn').onclick=selectAllNotes;
+document.getElementById('autoSelBtn').onclick=()=>{
+  autoSelect=!autoSelect;
+  document.getElementById('autoSelBtn').classList.toggle('on',autoSelect);
+  flash(autoSelect?'auto-select ON — the cursor picks the target':'auto-select OFF — the selection is authoritative');
+  changed();
+};
 document.querySelectorAll('#timeRegime button').forEach(b=>b.addEventListener('click',()=>{
   view.timeRegime=b.dataset.r; document.querySelectorAll('#timeRegime button').forEach(x=>x.classList.toggle('on',x===b)); regimePill();
   // consequential: convert the ACTIVE region's coordinate system (extent + notes conserved in seconds)
@@ -2603,7 +2696,7 @@ async function loadCycManifest(){
 }
 
 /* ---- clipboard: cut / copy / paste ---- */
-function deepNote(n){ return {type:n.type, vel:n.vel, voice:n.voice||1, curve:n.curve, start:n.start, dur:n.dur, pts:n.pts.map(p=>{ const o={t:p.t,hz:p.hz}; if(p.curve) o.curve=p.curve; return o; })}; }
+function deepNote(n){ return {vel:n.vel, voice:n.voice||1, curve:n.curve, start:n.start, dur:n.dur, pts:n.pts.map(p=>{ const o={t:p.t,hz:p.hz}; if(p.curve) o.curve=p.curve; return o; })}; }
 function doCopy(){ const sel=selectedNotes(); if(!sel.length) return; clipboard={notes:sel.map(deepNote)};
   try{ navigator.clipboard && navigator.clipboard.writeText(JSON.stringify({tabotaRollClip:true, notes:clipboard.notes})); }catch(e){}
   flash(`copied ${sel.length} note${sel.length!==1?'s':''}`); }
@@ -2736,10 +2829,10 @@ function segCurve(note,seg){ return note.pts[seg] && note.pts[seg].curve || note
  * ========================================================================== */
 function curveTargets(){            // every curve-bearing writable across both surfaces, as {get,set}
   const out=[];
-  if(segSel && segSel.note.type==='glide'){
+  if(segSel){
     const s=segSel; out.push({ get:()=>segCurve(s.note,s.seg), set:v=>{ s.note.pts[s.seg].curve=v; } });
   } else {
-    for(const n of selectedNotes()) if(n.type==='glide')
+    for(const n of selectedNotes())
       out.push({ get:()=>n.curve||'linear', set:v=>{ n.curve=v; n.pts.forEach(p=>{ delete p.curve; }); } }); // whole-note uniform
   }
   const em = (typeof tempoEditMode==='function') ? tempoEditMode() : {mode:'none'};
@@ -2780,12 +2873,12 @@ function joinSelection(){
   for(const n of sel){ const k=n.pts.length<=1?[0]:n.pts.map(p=>p.t);
     for(const tt of k){ const beat=n.start+tt*n.dur; const hz=pitchAt(n, n.pts.length<=1?0:tt); const last=raw[raw.length-1];
       if(last && beat<=last.beat){ if(Math.abs(hz-last.hz)>1e-6) last.hz=hz; continue; } raw.push({beat,hz}); } }
-  const joined={id:NID++, type:'glide', curve:sel[0].curve||depositCurve, vel:sel[0].vel, voice:sel[0].voice||1, start, dur,
+  const joined={id:NID++, curve:sel[0].curve||depositCurve, vel:sel[0].vel, voice:sel[0].voice||1, start, dur,
     pts: raw.map(q=>({t:(q.beat-start)/dur, hz:q.hz}))};
   if(joined.pts.length<2){ flash('cannot join'); return; }
   pushHistory();
   notes=notes.filter(n=>!selection.has(n.id)); notes.push(joined);
-  selection.clear(); selection.add(joined.id); changed(); flash(`joined ${sel.length} into one glide`);
+  selection.clear(); selection.add(joined.id); changed(); flash(`joined ${sel.length} into one line`);
 }
 document.getElementById('joinBtn').onclick=joinSelection;
 
@@ -2800,7 +2893,7 @@ function splitNoteAt(note, idxs){
     if(slice.length<2) continue;
     const start=slice[0].beat, end=slice[slice.length-1].beat, dur=Math.max(1e-4,end-start);
     const pts=slice.map((q,j)=>{ const o={t:(q.beat-start)/dur, hz:q.hz}; if(q.curve && j<slice.length-1) o.curve=q.curve; return o; });
-    pieces.push({id:NID++, start, dur, type:(note.type==='free'?'free':'glide'), curve:note.curve, vel:note.vel, voice:note.voice||1, pts});
+    pieces.push({id:NID++, start, dur, curve:note.curve, vel:note.vel, voice:note.voice||1, pts});
   }
   return pieces;
 }
@@ -2850,8 +2943,7 @@ function applyPointHz(hz){
   if(!pointSel || !(hz>0)) return;
   const n=pointSel.note;
   pushHistory();
-  if(n.type==='hold') n.pts[0]={...n.pts[0],hz};
-  else n.pts[pointSel.idx]={...n.pts[pointSel.idx],hz};
+  n.pts[pointSel.idx]={...n.pts[pointSel.idx],hz};
   changed();
 }
 ptHzIn.addEventListener('change',()=>{ const v=parseFloat(ptHzIn.value); if(v>0) applyPointHz(v); });
@@ -2870,7 +2962,7 @@ function syncPointEditor(){
   }
   const on=!!pointSel && notes.includes(pointSel.note);
   if(!on){ pointSel=null; ptHzIn.value=''; ptHzIn.disabled=true; ptNoteIn.value=''; ptNoteIn.placeholder='–'; ptNoteIn.disabled=true; return; }
-  const n=pointSel.note, i=n.type==='hold'?0:pointSel.idx;
+  const n=pointSel.note, i=pointSel.idx;
   const hz=n.pts[i] ? n.pts[i].hz : pitchAt(n,0);
   ptHzIn.disabled=false; ptNoteIn.disabled=false;
   if(document.activeElement!==ptHzIn) ptHzIn.value=(+hz.toFixed(3));
@@ -2883,8 +2975,8 @@ function renderVoiceUI(){
   if(!sel.length) vv.textContent='–';
   else { const set=new Set(sel.map(n=>n.voice||1)); vv.textContent = set.size===1?[...set][0]:'⁓'; vv.style.color = set.size===1?voiceColor([...set][0]):'var(--ink-dim)'; }
   // reflect curve: a selected segment, else a single selected glide
-  if(segSel && segSel.note.type==='glide') curveSel.value=segCurve(segSel.note,segSel.seg);
-  else { const gl=sel.filter(n=>n.type==='glide'); curveSel.value=(gl.length===1 && gl[0].curve)?gl[0].curve:depositCurve; }
+  if(segSel) curveSel.value=segCurve(segSel.note,segSel.seg);
+  else { const gl=sel.filter(n=>n.curve); curveSel.value=(gl.length===1)?gl[0].curve:depositCurve; }
   syncPointEditor();
   // legend: voices in use
   const used=[...new Set(notes.map(n=>n.voice||1))].sort((a,b)=>a-b);
@@ -2900,7 +2992,27 @@ function changed(){
   if(segSel && !notes.includes(segSel.note)) segSel=null;
   if(pointSel && !notes.includes(pointSel.note)) pointSel=null;
   if(ptSel.size){ for(const n of [...ptSel.keys()]) if(!notes.includes(n)) ptSel.delete(n); }
-  updateStatus(); renderVoiceUI(); draw(); syncCurveControl();
+  updateStatus(); renderVoiceUI(); draw(); syncCurveControl(); updateTargetPill();
+}
+/* THE TARGET PILL — always-visible consequence of the next gesture ("draw → note 7" vs "draw → NEW").
+   States the OUTCOME, not the state; in auto-select it reads the hover target live (hoverFeedback). */
+function updateTargetPill(hoverP){
+  const el=document.getElementById('targetPill'); if(!el) return;
+  const pool=new Set(selection); for(const n of ptSel.keys()) pool.add(n.id);
+  const selPresent=pool.size>0;
+  let txt='';
+  if(view.tool==='draw'){
+    if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null; txt='draw → '+(h?('note '+h.note.id):'NEW'); }
+    else if(!selPresent) txt='draw → NEW';
+    else txt = pool.size===1 ? ('draw → note '+[...pool][0]) : ('draw → sel ('+pool.size+')');
+  } else if(view.tool==='move'){
+    txt = selPresent ? ('move → '+(pool.size===1?('note '+[...pool][0]):('sel ('+pool.size+')'))) : (autoSelect?'move → hover':'move → –');
+  } else if(view.tool==='select'){
+    const pts=[...ptSel.values()].reduce((s,v)=>s+v.size,0);
+    txt = 'scope: '+(selPresent ? (selection.size+' note'+(selection.size!==1?'s':'')+(pts?(' +'+pts+'pt'):'')) : 'empty');
+  }
+  el.textContent=txt||'–';
+  el.classList.toggle('new', view.tool==='draw' && /NEW$/.test(txt));
 }
 function updateStatus(){
   const n=notes.length;
@@ -2910,7 +3022,8 @@ function updateStatus(){
     extra=` · segment ${segSel.seg+1}/${segSel.note.pts.length-1} of v${segSel.note.voice||1} · ${sc}`; }
   else if(selection.size===1){ const s=[...selection][0]; const note=notes.find(x=>x.id===s);
     if(note){ const hz=pitchAt(note,0); const mf=freqToMidi(hz,settings.a4); const base=Math.round(mf);
-      extra=` · sel v${note.voice||1} ${note.type} @ beat ${note.start.toFixed(2)} · ${hz.toFixed(2)}Hz (${midiToName(base)} ${((mf-base)*100>=0?'+':'')}${((mf-base)*100).toFixed(0)}¢)`; } }
+      const shape = note.pts.length>2 ? 'curve' : (Math.abs(1200*Math.log2(pitchAt(note,1)/pitchAt(note,0)))<0.5?'flat':'line');
+      extra=` · sel v${note.voice||1} ${shape} @ beat ${note.start.toFixed(2)} · ${hz.toFixed(2)}Hz (${midiToName(base)} ${((mf-base)*100>=0?'+':'')}${((mf-base)*100).toFixed(0)}¢)`; } }
   else if(selection.size>1) extra=` · ${selection.size} selected`;
   status.innerHTML=`ready — <span style="color:var(--ink)">${n} note${n!==1?'s':''}</span> · ${nv} voice${nv!==1?'s':''}${extra}`;
 }
@@ -2920,9 +3033,12 @@ let spaceDown=false;
 window.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
   if(penNote && (e.code==='Enter'||e.code==='Escape')){ e.preventDefault(); finalizePen(); return; }
+  if(e.code==='Escape'){ e.preventDefault(); deselectAll(); return; }              // universal deselect (accelerator; ⊘ is the pointer-first control)
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); return; }
-  const map={KeyV:'select',KeyA:'point',KeyH:'hold',KeyG:'glide',KeyP:'pen',KeyF:'free',KeyE:'erase'};
+  const map={KeyV:'select',KeyM:'move',KeyD:'draw',KeyE:'erase',KeyS:'slice'};
   if(map[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(map[e.code]);
+  const dmap={KeyH:'hold',KeyG:'glide',KeyP:'pen',KeyF:'free'};                    // arity keys jump to draw + set its mode
+  if(dmap[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) setDrawMode(dmap[e.code]);
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){ e.preventDefault(); if(e.shiftKey) redo(); else undo(); return; }
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){ e.preventDefault(); redo(); return; }
   if(e.code==='Delete'||e.code==='Backspace'){ if(penNote) finalizePen(); else if(tempoOpen && tempoSel.size){ tempoDeleteSelection(); } else if(selection.size||ptSel.size){ deleteSelection(); changed(); } }
@@ -3641,13 +3757,16 @@ document.getElementById('expJson').onclick=()=>{
                extent: (n.end&&n.end.region) ? { until:{ event:n.end.region, coord:+n.end.beat.toFixed(4) } }
                                              : { duration:+n.dur.toFixed(4) },
                payload:{ voice:n.voice||1, velocity:n.vel } };
-    if(n.type==='hold'){ ev.value={ pitch:{ hz:+pitchAt(n,0).toFixed(3) } }; }
-    else if(n.type==='glide' && n.pts.length===2){
+    // shape is read from the points, not a stored type: 2 equal points collapse to a single
+    // held pitch (format compression); 2 points → a slide; >2 → a contour.
+    const flat = n.pts.length===2 && Math.abs(1200*Math.log2(pitchAt(n,1)/pitchAt(n,0)))<0.5;
+    if(flat){ ev.value={ pitch:{ hz:+pitchAt(n,0).toFixed(3) } }; }
+    else if(n.pts.length===2){
       ev.value={ pitch:{ from:+pitchAt(n,0).toFixed(3), to:+pitchAt(n,1).toFixed(3) } };
       const c=segCurve(n,0); if(c && c!=='linear') ev.payload.curve=c;
     } else {
       ev.value={ pitch:{ from:+pitchAt(n,0).toFixed(3), to:+pitchAt(n,1).toFixed(3) } };
-      ev.payload.contour = n.pts.map((p,i)=>{ const o={pos:+p.t.toFixed(4), hz:+p.hz.toFixed(3)}; if(n.type==='glide' && i<n.pts.length-1) o.curve=segCurve(n,i); return o; });
+      ev.payload.contour = n.pts.map((p,i)=>{ const o={pos:+p.t.toFixed(4), hz:+p.hz.toFixed(3)}; if(i<n.pts.length-1){ const c=segCurve(n,i); if(c && c!=='linear') o.curve=c; } return o; });
     }
     return ev;
   };
@@ -3707,22 +3826,21 @@ function _notesFromV1(doc){
     }
     const voice=Math.max(1, e.voice||1);
     const velo=e.velocity!=null?e.velocity:(+vel.value||96);
-    let type, pts, ncurve;
+    let pts, ncurve;
     if(Array.isArray(e.contour) && e.contour.length){
       const cs=e.contour.map(c=>({t:(c.pos!=null?c.pos:c.t)||0, hz:tabotaToHz(c.hz!=null?c.hz:(c.yValue!=null?c.yValue:c.note),axis,a4), curve:c.curve}))
                         .filter(c=>c.hz!=null).sort((x,y)=>x.t-y.t);
       if(cs.length<2){ skipped++; continue; }
-      type = cs.some(c=>c.curve) ? 'glide' : 'free';
       pts = cs.map(c=>{ const o={t:Math.max(0,Math.min(1,c.t)), hz:c.hz}; if(c.curve) o.curve=c.curve; return o; });
     } else {
       const sy=tabotaToHz(e.startYValue!=null?e.startYValue:(e.yValue!=null?e.yValue:e.note),axis,a4);
       let ey=tabotaToHz(e.endYValue,axis,a4); if(ey==null) ey=sy;
       if(sy==null){ skipped++; continue; }
-      if(Math.abs(1200*Math.log2(ey/sy))<0.5){ type='hold'; pts=[{t:0,hz:sy}]; }
-      else { type='glide'; pts=[{t:0,hz:sy},{t:1,hz:ey}]; ncurve=e.curve||'linear'; }
+      pts=[{t:0,hz:sy},{t:1,hz:ey}];                      // flat or slide — both are 2-point notes
+      if(Math.abs(1200*Math.log2(ey/sy))>=0.5) ncurve=e.curve||'linear';
     }
-    const n={id:NID++, start, dur, type, vel:velo, voice, pts};
-    if(type==='glide' && ncurve) n.curve=ncurve;
+    const n={id:NID++, start, dur, vel:velo, voice, pts};
+    if(ncurve && ncurve!=='linear') n.curve=ncurve;
     out.push(n);
   }
   const bend=(doc.midiExport && +doc.midiExport.bendRange)||null;
@@ -3771,24 +3889,23 @@ function _notesFromV2(doc){
     const voice=Math.max(1,(n.payload&&n.payload.voice)||1);
     const velo=(n.payload&&n.payload.velocity!=null)?n.payload.velocity:(+vel.value||96);
 
-    let type, pts, ncurve;
+    let pts, ncurve;
     const contour = n.payload && Array.isArray(n.payload.contour) ? n.payload.contour : null;
     if(contour && contour.length>=2){
       const cs=contour.map(c=>({t:(c.pos!=null?c.pos:c.t)||0, hz:tabotaToHz(c.hz!=null?c.hz:(c.note!=null?c.note:c.yValue),'frequency',masterA4), curve:c.curve}))
                       .filter(c=>c.hz!=null).sort((a,b)=>a.t-b.t);
       if(cs.length<2){ skipped++; continue; }
-      type=cs.some(c=>c.curve)?'glide':'free';
       pts=cs.map(c=>{ const o={t:Math.max(0,Math.min(1,c.t)),hz:c.hz}; if(c.curve)o.curve=c.curve; return o; });
     } else if(m==='glide'){
       const a=n.pitch.from, b=n.pitch.to; if(a==null||b==null){ skipped++; continue; }
-      if(Math.abs(1200*Math.log2(b/a))<0.5){ type='hold'; pts=[{t:0,hz:a}]; }
-      else { type='glide'; pts=[{t:0,hz:a},{t:1,hz:b}]; ncurve=(n.payload&&n.payload.curve)||'linear'; }
+      pts=[{t:0,hz:a},{t:1,hz:b}];                        // flat or slide — both 2-point
+      if(Math.abs(1200*Math.log2(b/a))>=0.5) ncurve=(n.payload&&n.payload.curve)||'linear';
     } else {
       const hz=n.pitch.hz; if(hz==null){ skipped++; continue; }
-      type='hold'; pts=[{t:0,hz}];
+      pts=[{t:0,hz},{t:1,hz}];                            // single held pitch → level 2-point note
     }
-    const note={id:NID++, start, dur, type, vel:velo, voice, pts};
-    if(type==='glide' && ncurve) note.curve=ncurve;
+    const note={id:NID++, start, dur, vel:velo, voice, pts};
+    if(ncurve && ncurve!=='linear') note.curve=ncurve;
     out.push(note);
   }
   return {notes:out, bpm:masterBpm, sig:[sigNum_,sigDen_], a4:masterA4, skipped, bend, tempo:mTempo};
@@ -3869,31 +3986,32 @@ function seed(){
   activePitchRegionId=pitchRegions[0].id;
   // JI degrees from the A root: 1/1 9/8 5/4 4/3 3/2 5/3 15/8 (5-limit major)
   const ji=r=>a*r;
+  const lvl=(s,h)=>[{t:0,hz:s},{t:1,hz:h===undefined?s:h}];   // a flat (level) 2-point note
   notes=[
     // A — metered 4/4 @120, 2 bars (start/dur in beats)
-    {id:NID++,region:A.id,start:0,dur:8,type:'hold', vel:70, voice:2,pts:[{t:0,hz:semis(-5)}]},                              // drone (E4-ish, visible)
-    {id:NID++,region:A.id,start:0,dur:1,type:'hold', vel:100,voice:1,pts:[{t:0,hz:a}]},
-    {id:NID++,region:A.id,start:1,dur:1,type:'hold', vel:100,voice:1,pts:[{t:0,hz:semis(3.5)}]},                              // neutral third
-    {id:NID++,region:A.id,start:2,dur:2,type:'glide',curve:'smooth',vel:100,voice:1,pts:[{t:0,hz:semis(7)},{t:1,hz:semis(12)}]},
-    {id:NID++,region:A.id,start:4,dur:2,type:'glide',vel:95, voice:1,pts:[                                                    // multi-point, per-segment curves
+    {id:NID++,region:A.id,start:0,dur:8, vel:70, voice:2,pts:lvl(semis(-5))},                                                // drone (E4-ish, visible)
+    {id:NID++,region:A.id,start:0,dur:1, vel:100,voice:1,pts:lvl(a)},
+    {id:NID++,region:A.id,start:1,dur:1, vel:100,voice:1,pts:lvl(semis(3.5))},                                               // neutral third
+    {id:NID++,region:A.id,start:2,dur:2,curve:'smooth',vel:100,voice:1,pts:[{t:0,hz:semis(7)},{t:1,hz:semis(12)}]},
+    {id:NID++,region:A.id,start:4,dur:2,vel:95, voice:1,pts:[                                                                // multi-point, per-segment curves
        {t:0,hz:semis(12),curve:'exp'},{t:.5,hz:semis(8),curve:'log'},{t:1,hz:semis(10)}]},
     // HYBRID: starts at Intro beat 6, ends 1.0s INTO Free — endpoints on two different charts
-    {id:NID++,region:A.id,start:6,dur:3,type:'glide',curve:'smooth',vel:100,voice:1,
+    {id:NID++,region:A.id,start:6,dur:3,curve:'smooth',vel:100,voice:1,
      end:{region:B.id,beat:1.0},pts:[{t:0,hz:semis(5)},{t:1,hz:semis(14)}]},
     // B — chronological @4s (start/dur in SECONDS)
-    {id:NID++,region:B.id,start:1.6,dur:0.6,type:'hold', vel:90, voice:1,pts:[{t:0,hz:semis(9)}]},                            // 5.6s abs — still 12-TET ground
-    {id:NID++,region:B.id,start:2.6,dur:1.4,type:'glide',curve:'exp',vel:90, voice:1,pts:[{t:0,hz:ji(9/8)},{t:1,hz:ji(2*9/8)}]},   // 6.6s abs — past the tuning seam, so it speaks in ratios
+    {id:NID++,region:B.id,start:1.6,dur:0.6, vel:90, voice:1,pts:lvl(semis(9))},                                             // 5.6s abs — still 12-TET ground
+    {id:NID++,region:B.id,start:2.6,dur:1.4,curve:'exp',vel:90, voice:1,pts:[{t:0,hz:ji(9/8)},{t:1,hz:ji(2*9/8)}]},   // 6.6s abs — past the tuning seam, so it speaks in ratios
     // SHOWCASE: one line crossing BOTH kinds of chart — onset at 4.8s on the 12-TET
     // grid (equal fifth, 700¢), end hung on Coda's chart at eighth 3 (9s abs), landing
     // on the just major third (5/4, 386¢) of the JI grid that takes over at 6s
-    {id:NID++,region:B.id,start:0.8,dur:5.2,type:'glide',curve:'smooth',vel:95,voice:2,
+    {id:NID++,region:B.id,start:0.8,dur:5.2,curve:'smooth',vel:95,voice:2,
      end:{region:C.id,beat:3},pts:[{t:0,hz:semis(7)},{t:1,hz:ji(2*5/4)}]},
     // C — metered 5/8 @♩=90 (eighths tick at 180/min), entirely on the JI chart: an
     // A-major arpeggio in whole-number ratios (the third sits −13.7¢ from its equal neighbour)
-    {id:NID++,region:C.id,start:0,dur:1,type:'hold',vel:100,voice:1,pts:[{t:0,hz:ji(2)}]},
-    {id:NID++,region:C.id,start:1,dur:1,type:'hold',vel:90, voice:1,pts:[{t:0,hz:ji(2*5/4)}]},
-    {id:NID++,region:C.id,start:2,dur:1,type:'hold',vel:90, voice:1,pts:[{t:0,hz:ji(2*3/2)}]},
-    {id:NID++,region:C.id,start:3,dur:3,type:'hold',vel:100,voice:1,pts:[{t:0,hz:ji(4)}]},
+    {id:NID++,region:C.id,start:0,dur:1,vel:100,voice:1,pts:lvl(ji(2))},
+    {id:NID++,region:C.id,start:1,dur:1,vel:90, voice:1,pts:lvl(ji(2*5/4))},
+    {id:NID++,region:C.id,start:2,dur:1,vel:90, voice:1,pts:lvl(ji(2*3/2))},
+    {id:NID++,region:C.id,start:3,dur:3,vel:100,voice:1,pts:lvl(ji(4))},
   ];
 }
 populateRoot(); populateScaleSelect(); loadManifest();

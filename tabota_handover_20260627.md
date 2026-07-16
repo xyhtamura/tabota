@@ -666,6 +666,114 @@ automation can't reach internals; gesture feel remains a hand test, by design.
 **Needs feel (xyh):** select/point separation in the hand, ghost legibility, frozen-pitch
 end-resize, dblclick delete. Aliquoto ghost-add port = its own aliquoto session (owner).
 
+### Cut 2 Stage 1 — TYPE-KILL — DONE (2026-07-14), logic-proven + browser smoke
+Settled with owner before code (selection-as-scope zoom-in): draw modes stay **explicit**
+chips (hold/glide/pen/free) — no gesture inference, mobile-first. `type:'hold'` **killed
+outright** — it never reached the format anyway (schema has no note types; export already
+keyed on shape, import synthesized hold from flat pitch). Three forks settled: (1) **min-2
+points** — a note is always a ≥2-point curve; `removePoints` deleting to 1 now removes the
+note (was `collapseToHold`). (2) **No flat differentiation** — notes were already colored by
+VOICE not type, so nothing to change; the `━ hold` chartreuse visual was type-fiction. (3)
+**No legacy** — no old Roll scores exist, so `type` is deleted, not migrated.
+
+The move: **the 1-point degenerate ceases to exist.** A flat note is now 2 points at equal
+hz; every `type==='hold'` special-case (hit-test, selectHit, marquee, resize, render, point
+editor) was there to handle the 1-point geometry and simply **deletes** — the general
+2-point path subsumes it. `pitchAt` now **always** applies `shapeK` (linear = identity), so
+glide-vs-free collapses: a note bends where a segment carries a `curve`, stays linear where
+it doesn't. Export reads shape from points (2 equal → `{pitch:{hz}}` compression kept; 2 →
+from/to; >2 → contour). Both Tabota readers + MIDI import make flats 2-point. Dead `holdEdge`
+removed. `hold` tool now deposits a flat 2-point note (drag sets length, pitch level);
+point-tool body-add on a flat note bends it → **hold→glide is gestural** (contract's free win).
+
+Proven: both `<script>` blocks parse clean; `parity.cjs` 35/35 against the REAL exported
+`pitchAt`/`buildMidi` (flat==old-hold constant; curve always-applies == old glide & ==
+linear for free; multi-point per-seg curves; flat MIDI = no bend motion) + mirrored
+`removePoints` (delete-to-1 → remove), export shape, and export→import→export round-trip.
+Browser smoke (localhost:8131): boots with the 13-note seed, **zero console errors**, notes
+render (voice-colored contours); synthetic hold deposit → note reads **`flat`** (13→14);
+point-tool body-add into a flat note commits with no spurious note + no errors. Canvas is
+0-width until a post-load resize fires (offscreen flex timing) — a preview-harness quirk,
+not the page; screenshot tool hangs on it, so smoke used pixel-sampling + status/DOM reads.
+IIFE `'use strict'` still walls injected automation from internals; gesture feel = hand test.
+
+**Format note:** `.tabota` OUTPUT is unchanged for flats (still `{pitch:{hz}}`) → **no
+DEPENDENCIES.md contract touched** (schema/resolver/CSS all untouched). Only tidy: a
+multipoint note with explicitly-linear segments no longer emits `curve:'linear'` (omitted =
+linear by default; round-trip stable). No legacy files to break.
+
+**Needs feel (xyh):** hold deposit (level-lock during length drag); the flat→bent gesture
+(body-add legibility on a flat line); point-delete down to 2 then the removal at 1; that
+notes with no more type read/behave the same in the hand.
+
+**NEXT (Cut 2 continued):** the verb re-cut — select (scope-binder) / move / draw
+(scoped-by-selection HARD LAW + target pill + auto-select toggle default OFF) / erase (kept
+as-is for now, owner: revisit "quite further down the line after draw + regions"). Point
+tool dissolves into move+draw; machinery (`freezePitch`, ghost-add, `ptMove`, `removePoints`)
+survives underneath. Then band axis-lock (xy/x/y). `type:'hold'` in schema/export = moot now.
+
+### Cut 2 Stage 2 — THE VERB RE-CUT — DONE (2026-07-14), logic-proven + browser smoke
+Selection-as-scope is BUILT. Two forks settled with owner before code: **free-onto-existing
+= REPLACE the swept span** (aliquoto OVR/bake prior art; merge rejected — a scribble means
+redraw); **pen-onto-existing = per-tap commit** (each tap its own undo step; no finalize —
+the curve already exists).
+
+**Toolbar now:** `▣ select · ✥ move · ✎ draw [━╱✎∿ mode chips] · ⌫ erase · ⌿ slice · ✋ pan`
+plus `⊘ deselect · ⊞ select-all` (pointer-first), the **TARGET PILL**, and `◎ auto`.
+Keys: V/M/D tools, H/G/P/F jump-to-draw+mode, S slice, **Esc = deselect**; Ctrl-D stays
+duplicate (contract wanted Ctrl-D deselect — occupied, Esc + ⊘ serve instead). Point tool
+DELETED from the layer; its machinery survives (ghost-add → draw, point-move → move,
+dblclick-point-delete → move, `freezePitch` → both).
+
+- **select** = pure binder, never moves. Click point→granular, body/aura→whole, marquee→
+  points with full-coverage promotion (`mergeSel`, unchanged). Set-op chips live here only
+  (they DIM under other verbs). **Selection persists across tool switches** — `setTool` no
+  longer clears it; that clearing was the anti-scope fossil.
+- **move** = translate the scope. Drag anywhere moves it (leader-snap seconds-rigid `ptMove`).
+  **Scope decides an end-handle:** whole-note selected → time-only resize (pitch frozen);
+  granular → full point move. Empty scope + auto OFF → refusal flash.
+- **draw** = deposit, scoped. HARD LAW enforced: scope present ⇒ deposit INTO it, never a
+  new note; click outside the scope's extent ⇒ refusal flash naming ⊘. Per-mode onto-existing:
+  hold = ghost point GLUED to the curve's pitch (drag repositions time only — the level
+  arity); glide = Stage-1 ghost-add (free reposition, release commits); pen = per-tap commit;
+  free = sweep, release REPLACES the swept span (extent invariant, outside curves preserved,
+  ember-dash ghost preview during the sweep). New-note deposits (empty scope) unchanged.
+- **auto-select (◎, global, default OFF)**: ON ⇒ cursor proximity is authoritative for BOTH
+  move and draw; it rebinds the scope to what it grabs; no curve beneath ⇒ draw makes NEW.
+- **TARGET PILL** states the consequence: `draw → NEW` / `draw → note N` / `draw → sel (k)`;
+  `move → …`; `scope: …` under select. Live hover readout in auto mode.
+
+**One real bug found & fixed during smoke:** `depositTargetAt` first tested extent in
+TIME-space (`xToBeatIn` vs `n.start`), which diverges from the renderer for notes extrapolated
+past their home region's end — deposits into such notes were wrongly refused. Fix: containment
+tests **rendered px** (`beatToX` under the note's own chart) — the target is exactly what is
+drawn, sibling of THE GRID LAW.
+
+**Proven (Node, `verify_verbs.cjs` 30/30 — extracts the LIVE functions from the HTML):**
+hard-law target resolution (selected-only, topmost-wins, outside→null/refuse, ptSel-only
+scope binds); hold-glued deposit (cursor pitch ignored, freezePitch drag, ghost set); glide
+vs pen same insert geometry (pen committed via pushHistory, no drag session); extent
+confinement (t clamped strictly interior, extent unchanged); free-onto replace-span (inside
+points die, outside survive with their curves, sampled land, t monotonic in [0,1], extent
+invariant); bare-tap/zero-span no-ops. Plus `parity.cjs` 35/35 still green; both script
+blocks parse-clean. **Browser smoke (localhost:8131, zero console errors):** boot state
+(draw/hold active, pill `draw → NEW`, chips dimmed); draw-new → pill tracks; hard-law
+refusal outside extent (no note created); glide-into (ghost hz live in the point editor,
+flat→curve); pen-into two taps; free-onto sweep; select binds (whole + granular `+1pt`);
+move translates with `move` cursor; Esc deselects; empty-scope move refusal; auto-select ON
+grabs the note under cursor. NOTE: smoke coordinates must respect SNAPPED note starts and
+region spans — two "failures" during testing were bad probe coords, not bugs (hover-scan
+the rendered span first).
+
+**Needs feel (xyh):** the whole verb hand — bind-then-verb rhythm vs the old modal tools;
+hard-law tax (deselect before new) in real composing; pill legibility/placement; hold-glued
+vs glide-free deposit distinction; free-sweep replace vs expectations; auto-select ON as a
+working mode. Dormant machinery kept intentionally: `mode:'move'` + `segMove` drag handlers
+and `ptSelHas` are currently unreachable (named seams — revive or cull later).
+
+**NEXT:** band axis-lock (xy/x/y renames + move DOF filter — small, scoped). Then regions
+(delete-as-merge spec is settled, ll.406–432). Erase's fate stays parked by owner call.
+
 ---
 
 ## THE TOOL MATRIX — open design note (2026-07-11, thinking, NOT settled)
