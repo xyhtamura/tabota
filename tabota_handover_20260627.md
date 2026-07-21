@@ -774,6 +774,154 @@ and `ptSelHas` are currently unreachable (named seams — revive or cull later).
 **NEXT:** band axis-lock (xy/x/y renames + move DOF filter — small, scoped). Then regions
 (delete-as-merge spec is settled, ll.406–432). Erase's fate stays parked by owner call.
 
+### Development 3 (2026-07-14) — the POLARITY model (aliquoto import; thinking, NOT settled)
+
+Owner, post-verb-re-cut, penciling — **do not build from this yet**. The aliquoto
+move/place vocabulary comes home to the Roll:
+
+**Move + auto-select ≈ select.** With ◎ auto ON, move absorbs select's jobs: marquee on
+empty, grab on object, selectively add/remove points. Select remains the CAREFUL mode's
+explicit binder; auto ON trades that explicitness for speed (consistent with the toggle's
+existing philosophy). Aliquoto prior art: its move does select-like work.
+
+**Draw gains polarity (aliquoto's place): + deposits, − takes away. ERASE DISSOLVES into
+draw(−).** Resolves the erase question by symmetry — but the symmetry is deliberately
+inexact (owner: "not really exact"):
+1. draw(−) + auto ON ≈ today's erase, but POINT-wise: it removes points under the cursor,
+   never a whole curve — unless the last points go (min-2 law already removes the note).
+   Easy full-curve erasure is DELEGATED to select + Del.
+2. draw(−) gets a MARQUEE: all points inside die. This makes the BAND relevant to draw.
+3. draw(−) + auto OFF erases only SELECTED points; its marquee likewise only kills points
+   already in the scope. (The hard law's − mirror: destruction is confined to the scope.)
+Draw MODE (hold/glide/pen/free) is mostly irrelevant under − (owner: "generally, it
+doesn't matter what draw mode is selected").
+
+**Tempo extrapolation (noted for later):** these verbs eventually extend over the tempo
+lane (the B-layer unification), and draw(+) should carry the keep/linear affect vocabulary
+the tempo map already has — note that `applyAffect`/`depositAffect` are already wired on
+note inserts; surfacing the affect chips for note-draw is UI work, not plumbing.
+
+**Region tool:** earlier idea — lump region-cutting into draw via the x/y band ribbon —
+still possible, but owner now leans a SEPARATE region tool ("safer bet"), which also
+enables a BOX definition: cut along an X range and Y range simultaneously. Still thinking.
+
+**SETTLED (owner, 2026-07-14, second pass):**
+- **Draw(+) marquee = nothing.** Marquee is a −-only gesture inside draw; accepted
+  asymmetric feature. (Parked thought: a brush RADIUS for erase seems helpful — not
+  important right now.)
+- **Draw(−) modes:** free(−) = HOLD-ERASE (sweep erases continuously along the path);
+  the other modes erase one point per tap. Intuitive but unproven usefulness — owner will
+  feel-test personally before judging.
+- **Move+auto marquee BINDS scope — copy aliquoto's behaviour exactly:**
+  - move·auto (replace — find an ARROW icon for this chip) = deselects, reselects fresh;
+  - move·auto (+) = retains selection, adds;
+  - move·auto (−) = retains selection, removes — and **move·auto(−) can NEVER move
+    anything on its own**;
+  - under auto, move only MOVES when the grab lands NEAR A POINT; otherwise the gesture
+    is a marquee;
+  - move WITHOUT auto keeps today's behaviour: drags the selection from anywhere.
+  So under auto, move reads the set-op chips (they un-dim for move·auto — select owns
+  them, move-as-select borrows them). **Select is fully redundant under auto — that is
+  the point:** a careful/general pair (select + move) vs a faster/less-precise mode
+  (move·auto alone).
+
+**SETTLED (owner, 2026-07-14, third pass):**
+1. **Polarity is an ADJECTIVE, not a tool** — its own chip row, "kind of like a modifier
+   attached to the tool" (owner: tentative but "seems to make sense"). This is the tool
+   MATRIX realized in the toolbar grammar: tools are VERBS, chip rows are ADJECTIVES
+   (draw's arities, draw's polarity, select's set-ops, the band). Erase dissolves.
+2. **Mobile Del: 🗑 confirmed** — scope group becomes ⊘ ⊞ 🗑 (deselect / select-all /
+   delete-selection), Del key an accelerator.
+3. **move·auto aura-grab MOVES the whole note** (Roll extension over the aliquoto copy;
+   marquee only from true empty). And rename the ◎ auto toggle to **"+sel"** (owner
+   suggestion — it labels the move+select fusion; note it also governs draw's targeting,
+   so the label should survive that reading too. Icon/label at build).
+4. **Region: SEPARATE tool, and slice RENAMES to region** — the region tool absorbs
+   slicing; box definition (X×Y ranged cut) becomes expressible.
+5. **Chip icons: ↷ replaces "replace"; + / − for include/exclude.**
+
+**Region tool arity — thinking, NOT settled (owner, "we can think"):** a join/split arity
+row beside the polarity, for region (and maybe select):
+- **region(+)** = split at the cut, and the NEW region comes up FREE — free time or free
+  pitch depending on the band axis;
+- **region(−)** = delete with the settled swallow rules (ll.406–432: take the region
+  behind; none behind → take the front; only region → become free/free);
+- **region MERGE** = decided through flag pulling (the existing flag/eclipse gesture
+  family);
+- **region SPLIT** = like region(+) but the new region RETAINS all properties (pure cut).
+So + and split differ only in what the new region inherits (free vs copy); − and merge
+differ in coordinate-system survival (collapse-to-one vs keep-both — the old
+delete-vs-merge distinction, now as chips). Sketch, revisit before the region build.
+
+Status: verb re-cut build is stable; nothing built from this note.
+
+### Development 4 (2026-07-14, same sitting) — GRAMMAR + the split/merge arity (thinking, NOT settled)
+
+**Linguistic precision (owner):** verb–ADVERB (or modifier–root, "tool–arity") is the
+better frame than verb–adjective. And the precision pays: select/move/draw are VERBS that
+act on certain NOUNS (points, notes), while REGION is a noun pressed into the tool slot.
+There is "hidden gestural lumped stuff" here worth illuminating — the region tool is
+plausibly the same adverb set (split / merge / + / −) targeting a DIFFERENT noun, i.e.
+the tool matrix's TARGET AXIS resurfacing: adverbs are universal, the noun varies.
+
+**"+sel" label — DEFERRED.** Owner counter: "target" may be better (it is what the pill
+already says); don't conflate auto with select yet — auto may grow behaviour select
+doesn't have. Keep ◎ auto for now; naming decided later.
+
+**The SPLIT/MERGE arity (sketch):** a second adverb row beside polarity. Per verb:
+- **select·split** = click mid-note → split at that point, ONE gesture (today: select
+  point + J-adjacent multi-step). **select·merge** = marquee notes → join them in one
+  gesture.
+- (**"potentially terrible idea"**, owner's words:) select·split MARQUEE = slice the
+  curve at snap-time gridlines, but only inside the marquee area (batch split, area-
+  scoped like point-select). **move·split/merge (targeted)** = everything select does,
+  but can also move.
+- **draw·split (with a note selected):** draw ANYWHERE; wherever the new stroke B
+  occupies the same time as selected note A (the y-axis would hit two points), A is CUT
+  so that **A ∪ B stays pitch-time BIJECTIVE** (one pitch per time within a voice).
+  Consequence: draw B over all of A ⇒ A is deleted. — Note the kinship: this is the
+  TEMPO LANE's tiling law ("a function of time cannot hold two values", schema §tempo)
+  imported to notes; tempo deposits already behave this way. Draw·split = "tiling ON".
+  The free-onto replace-span (1a) is this same idea confined within one note.
+- **draw·merge (with a note selected):** a stroke that EXCEEDS the note's extent is
+  merged back into the curve (endpoints connected) — an easy note-EXTENSION gesture.
+  This is the sanctioned relaxation of Dev-2 law #4 (deposit confined to [start,end], no
+  auto-extension): the law holds in the DEFAULT arity; extension becomes an explicit
+  adverb, never an accident.
+- draw·split/merge with EMPTY scope: unspecified ("don't know what to do") beyond the
+  selected-note cases above.
+
+Nothing here is committed; the owner is thinking aloud and wants the thinking preserved.
+Collision to watch at build: split/merge + polarity + arity(hold/glide/pen/free) + band
+is FOUR adverb rows on draw — chip-row budget and mobile ergonomics need a pass before
+any of this lands.
+
+**Region properties go CONTEXTUAL (owner, same sitting):** the frame controls (region
+time / bpm / sig / bars / pitch scale / a4 / cycla) should disappear from the always-
+visible chrome — they are not always relevant; most users won't change a region on the
+fly. They surface only WHEN A FLAG IS SELECTED — either as a contextual toolbar strip or
+a window (undecided; the tempo lane's in-lane contextual editor is the in-house precedent
+for the strip form, and pointer-first/mobile favors it over a floating window).
+Grammar-consistent: selecting a region's FLAG binds the region NOUN as scope, and its
+properties are that scope's inspector — same shape as note-selection feeding the point
+editor. **Load-bearing side effect:** the always-live controls are the ROOT of the §6
+stale-controls clobber (`syncRegionFromControls` on every `changed()`); making them
+contextual is the natural on-ramp to the durable fix named there — model as single source
+of truth, controls a pure view that exists only while a flag is selected. If built, the
+DOM→model sync direction should be killed in the same sitting, not retrofitted.
+
+**MIDI controls consolidate into the bend report (owner, same sitting):** base ch, prog,
+PPQ, (vel, default len, bars — see sort below) are relevant mostly at MIDI conversion —
+consolidate them INSIDE the bend report as a "MIDI compatibility settings/check" panel.
+Clears the top toolbar significantly. This is the 2026-06-27 backlog item ("[format]
+Export-settings bar") finding its home: the bend report becomes the export-settings
+surface, and the settings ride into `.tabota` payload → the .tabota-as-project-file
+thread (also where cycla round-trip lands). Sort to respect at build: base ch / prog /
+PPQ / bend range are pure TRANSLATION settings (MIDI panel); vel and default len are
+AUTHORING deposit defaults (draw's adverbs — contextual with draw, not with export);
+bars is a REGION property (goes contextual with the flag, previous note). Three
+destinations, one emptied toolbar.
+
 ---
 
 ## THE TOOL MATRIX — open design note (2026-07-11, thinking, NOT settled)
@@ -918,3 +1066,41 @@ sweep axis, slice axis, now move DOF). Pointer-first axis-lock — replaces the
 Shift-to-constrain modifier other apps use, honoring the no-keyboard-required law.
 `box` vs `region` (free-rect vs region-snapped) stay distinct for marquee/slice but both
 read as "xy / both axes" for move. Not settled; affects both `move` and `slice`.
+
+### Cut 2 Stage 3 — BAND AXIS-LOCK — DONE (2026-07-14), browser-measured + parse-proven
+The band selector is now the universal AXIS-LOCK. Renamed **box / vertical / horizontal /
+region → box / x / y / xy** across every reader (state, marquee `marqueeRect`+`commitMarquee`,
+slice routing, tempo-lane marquee draw + `commitTempoMarquee`); grep confirms no stale
+`'vertical'|'horizontal'|'region'` band tokens remain (the two surviving `'box'` hits are
+correct). One selector, THREE verbs read it: marquee sweep axis, slice cut axis, and now
+**move DOF**:
+- **x** (time axis) → move locks PITCH (`moveLockY()`), only time changes;
+- **y** (pitch axis) → move locks TIME (`moveLockX()`), only pitch changes;
+- **box / xy** → move free in both.
+Predicates `moveLockX()`/`moveLockY()` are read by the live `ptMove`, the `resize` point-move
+(gated to `view.tool==='move'` so DRAW deposits, which reuse `resize`+`ghost`, are governed by
+drawMode not the band), and the dormant `move` path (kept consistent for revival).
+
+**Bug found & fixed in smoke (the load-bearing subtlety):** pitch-lock zeroed the pitch
+DELTA (`rawDm=0`) but `ptMove` still re-ran `snapPitchHzAt` at the new time, re-quantizing the
+held pitch → a ~2¢ drift under an x-band move (measured 1174.66→1173.33 Hz). A lock that
+leaks 2 cents isn't a lock. Fix: under `moveLockY()`, keep `hz` EXACT (skip the re-snap
+entirely) — the band promised pitch wouldn't move, so it doesn't, to the float. (`resize`'s
+pitch-lock was already exact via `hz=null`; time-lock is exact because `dSec` collapses to 0.)
+
+**Proven — browser-measured (localhost:8131, zero console errors), the decisive form for a DOF
+constraint:** created a flat note, switched to move, dragged DIAGONALLY under each band, read
+back beat+Hz from the status line: x-band → beat 4→5.25, **Hz identical 1108.73** (pitch
+exact); y-band → **beat identical 5.25**, Hz 1108.73→1396.91 (time exact); box → both change
+(5.25→6, 1397→1661). Regressions checked: x-band time-span marquee still selects across
+pitches; y-band slice cuts pitch; xy slice cuts both; box-slice refusal reads the new wording
+("pick x, y, or xy"); band labels render box/x/y/xy. Both script blocks parse-clean; verb
+suite 30/30 and type-kill parity 35/35 still green. Token migration is parse+grep-proven;
+the DOF invariance is measured, not asserted (predicates are trivial; the risk was the
+re-snap leak, which measurement caught).
+
+**Needs feel (xyh):** the pointer-first axis-lock in the hand — does band-as-DOF replace the
+Shift-drag reflex cleanly; is x/y/xy legible as a mode you hold across a gesture; does locked
+move feel like the constraint you meant. **PINNED (unchanged):** band still conflates
+marquee-sweep / slice-axis / move-DOF into one selector — the doc's re-separation note (a
+pitch-bounded time slice a shared band can't express) still stands if that case ever arrives.

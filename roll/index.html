@@ -349,10 +349,10 @@ select:disabled{
   <div class="group">
     <label>band</label>
     <div class="seg" id="selBandSeg">
-      <button data-b="box" class="on" title="Box — free rectangular marquee">▢ box</button>
-      <button data-b="vertical" title="Time band — sweep horizontally to select a span of time across all pitches">▮ time</button>
-      <button data-b="horizontal" title="Pitch band — sweep vertically to select a register across all time">▬ pitch</button>
-      <button data-b="region" title="Region band — click or sweep to select everything in whole region(s); with the slice tool it cuts time+pitch">田 region</button>
+      <button data-b="box" class="on" title="Box — free rectangular marquee; move is unconstrained">▢ box</button>
+      <button data-b="x" title="x — time axis: marquee sweeps a time span (all pitches); slice cuts time; MOVE is locked to time only">▮ x</button>
+      <button data-b="y" title="y — pitch axis: marquee sweeps a register (all time); slice cuts pitch; MOVE is locked to pitch only">▬ y</button>
+      <button data-b="xy" title="xy — both axes, region-snapped: marquee grabs whole region(s); slice cuts time+pitch; move is unconstrained">田 xy</button>
     </div>
   </div>
 
@@ -1102,11 +1102,16 @@ function ptSelHas(note,idx){ const s=ptSel.get(note); return !!s && s.has(idx); 
 function granCount(){ let c=0; for(const s of ptSel.values()) c+=s.size; for(const id of selection){ const n=notes.find(x=>x.id===id); if(n) c+=n.pts.length; } return c; }
 function clearGran(){ selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; }
 let selMode='replace';              // 'replace' | 'include' | 'exclude' — how clicks & marquees combine
-let selBand='box';                  // 'box' | 'vertical' (time span, all pitches) | 'horizontal' (pitch span, all time) | 'region' (whole regions)
-/* PINNED: the slice tool currently reads its cutting axis from selBand (time->time cut, pitch->pitch cut,
-   region->both, box->no-op). Selection bands and slice targets may need to RE-SEPARATE later — e.g. regions
-   whose lower and upper pitch halves carry different charts would want a pitch-bounded time slice that a
-   shared band can't express. If that lands, reintroduce an independent slice-target control. */
+let selBand='box';                  // 'box' (free rect) | 'x' (time axis) | 'y' (pitch axis) | 'xy' (both, region-snapped) — THE AXIS-LOCK: one selector read by marquee sweep, slice axis, and move DOF
+/* PINNED: the slice tool reads its cutting axis from selBand (x->time cut, y->pitch cut,
+   xy->both, box->no-op) — and MOVE now reads it as an axis-lock (x=time-only, y=pitch-only,
+   box/xy=free). ONE selector, three verbs (marquee sweep, slice axis, move DOF). Selection
+   bands and slice targets may need to RE-SEPARATE later — e.g. regions whose lower and upper
+   pitch halves carry different charts would want a pitch-bounded time slice that a shared band
+   can't express. If that lands, reintroduce an independent slice-target control. */
+/* axis-lock predicate: does the band constrain move to a single axis? */
+function moveLockX(){ return selBand==='y'; }   // y band → only pitch may change → x (time) is locked
+function moveLockY(){ return selBand==='x'; }   // x band → only time may change → y (pitch) is locked
 // merge a per-note set of point indices into selection/ptSel
 function mergeSel(note, idxSet, op){ // op: 'add' | 'sub'
   let cur = selection.has(note.id) ? new Set(note.pts.map((_,i)=>i)) : (ptSel.get(note)? new Set(ptSel.get(note)) : new Set());
@@ -1895,11 +1900,11 @@ cv.addEventListener('pointerdown',e=>{
     const pr=pitchRegionAtSec(xToSec(p.x)); if(pr && pr.id!==activePitchRegionId) focusPitchRegion(pr.id); }
 
   if(t==='slice'){ const r=regionAtX(p.x); if(!r) return;
-    if(selBand==='box'){ flash('box band doesn\u2019t slice \u2014 pick time, pitch, or region'); return; }
+    if(selBand==='box'){ flash('box band doesn\u2019t slice \u2014 pick x, y, or xy'); return; }
     const snappedBeat=snapBeat(xToBeat(p.x));
     const snappedSec=beatToSecIn(snappedBeat, activeRegion());
-    if(selBand==='vertical'||selBand==='region'){ splitRegionAt(r, snappedBeat); }
-    if(selBand==='horizontal'||selBand==='region'){ splitPitchAt(snappedSec); }
+    if(selBand==='x'||selBand==='xy'){ splitRegionAt(r, snappedBeat); }
+    if(selBand==='y'||selBand==='xy'){ splitPitchAt(snappedSec); }
     return; }
 
   // PEN (new-note session): click to place successive points (double-click / Enter / Esc to finish)
@@ -2185,10 +2190,10 @@ cv.addEventListener('pointermove',e=>{
     updateStatus(); return;
   }
   if(d.mode==='ptMove'){
-    const rawDm=-(p.y-d.sy)/view.pxPerSemi;
-    const rawDs=(p.x-d.sx)/view.pxPerSec;                                         // cursor motion in SECONDS (the shared numéraire)
+    const rawDm=moveLockY()?0:-(p.y-d.sy)/view.pxPerSemi;                         // axis-lock: x band pins pitch
+    const rawDs=moveLockX()?0:(p.x-d.sx)/view.pxPerSec;                           // cursor motion in SECONDS (the shared numéraire); y band pins time
     // leader-snap: the grabbed point lands on a gridline; the whole group follows by that one seconds delta
-    let dSec=(settings.snapTime && d.leadSec!=null)
+    let dSec=(settings.snapTime && d.leadSec!=null && !moveLockX())
       ? snapSecToChart(clampSecToContent(d.leadSec+rawDs)) - d.leadSec
       : rawDs;
     let loS=-Infinity, hiS=Infinity;
@@ -2202,20 +2207,22 @@ cv.addEventListener('pointermove',e=>{
       }
     }
     dSec=Math.max(loS,Math.min(hiS,dSec));
+    const pitchLocked=moveLockY();
     for(const [n,t] of d.targets){ const home=regionById(n.region); const abs=t.abs, sel=t.sel;
       const na=abs.map((a,i)=>{ if(!sel.has(i)) return {beat:a.beat, hz:a.hz, curve:a.curve};
         const nsec=beatToSecIn(a.beat, home)+dSec, nb=secToBeatIn(nsec, home);    // move rigidly in seconds, re-enter the chart
-        const hzRaw=midiToFreq(freqToMidi(a.hz,settings.a4)+rawDm,settings.a4);
-        return {beat:nb, hz:snapPitchHzAt(hzRaw, nsec), curve:a.curve}; });
+        // pitch-lock keeps hz EXACT (no re-snap at the new time — the band promised pitch wouldn't move)
+        const hzOut = pitchLocked ? a.hz : snapPitchHzAt(midiToFreq(freqToMidi(a.hz,settings.a4)+rawDm,settings.a4), nsec);
+        return {beat:nb, hz:hzOut, curve:a.curve}; });
       const start=Math.min(...na.map(q=>q.beat)), end=Math.max(...na.map(q=>q.beat)), dur=Math.max(1e-4,end-start);
       n.start=start; n.dur=dur;
       n.pts=na.map(q=>{ const o={t:(q.beat-start)/dur, hz:q.hz}; if(q.curve) o.curve=q.curve; return o; });
     }
     draw(); updateStatus(); return;
   }
-  if(d.mode==='move'){
+  if(d.mode==='move'){                                       // dormant single-note path; kept axis-lock-consistent for revival
     const home=regionById(d.note.region);
-    const ds=(p.x-d.sx)/view.pxPerSec, dm=-(p.y-d.sy)/view.pxPerSemi;
+    const ds=moveLockX()?0:(p.x-d.sx)/view.pxPerSec, dm=moveLockY()?0:-(p.y-d.sy)/view.pxPerSemi;
     let sSec=beatToSecIn(d.o.start, home)+ds;                   // note-start in SECONDS + drag (start is the leader)
     sSec=snapSecToChart(sSec);                                  // differential snap: the grid under the start (curve-aware)
     // keep the metric content (dur in beats) invariant; clamp start so the note stays on content
@@ -2252,14 +2259,19 @@ cv.addEventListener('pointermove',e=>{
   if(d.mode==='resize'){
     const n=d.note, home=regionById(n.region);
     const idx=d.ptIdx, last=n.pts.length-1;
-    const hz = d.freezePitch ? null : snapPitchHzAt(yToHz(p.y), xToSec(p.x));   // select-tool end-resize freezes pitch
+    // axis-lock applies to point MOVES (view.tool==='move'); draw deposits (which also use resize, w/ a ghost) are governed by drawMode, not the band
+    const moving = view.tool==='move';
+    const lockPitch = d.freezePitch || (moving && moveLockY());   // x band → pitch pinned
+    const lockTime  = moving && moveLockX();                       // y band → time pinned
+    const hz = lockPitch ? null : snapPitchHzAt(yToHz(p.y), xToSec(p.x));
     const b=xToBeatSnappedIn(p.x,home);
-    if(idx===0){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; if(hz!=null) n.pts[0]={...n.pts[0],hz}; }
-    else if(idx===last){ n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); if(hz!=null) n.pts[last]={...n.pts[last],hz}; }
+    if(idx===0){ if(!lockTime){ const end=d.o.start+d.o.dur; n.start=Math.min(b,end-gridStepUnits(mainSystem(home))); n.dur=end-n.start; } if(hz!=null) n.pts[0]={...n.pts[0],hz}; }
+    else if(idx===last){ if(!lockTime) n.dur=Math.max(gridStepUnits(mainSystem(home)),b-n.start); if(hz!=null) n.pts[last]={...n.pts[last],hz}; }
     else { // interior point — move in (t,hz) between its neighbors, note extent unchanged
-      let nt=(b-n.start)/Math.max(1e-6,n.dur);
-      nt=Math.max(n.pts[idx-1].t+1e-4, Math.min(n.pts[idx+1].t-1e-4, nt));
-      n.pts[idx] = hz!=null ? {...n.pts[idx], t:nt, hz} : {...n.pts[idx], t:nt};
+      if(lockTime){ if(hz!=null) n.pts[idx]={...n.pts[idx], hz}; }
+      else { let nt=(b-n.start)/Math.max(1e-6,n.dur);
+        nt=Math.max(n.pts[idx-1].t+1e-4, Math.min(n.pts[idx+1].t-1e-4, nt));
+        n.pts[idx] = hz!=null ? {...n.pts[idx], t:nt, hz} : {...n.pts[idx], t:nt}; }
     }
     draw(); updateStatus(); return;
   }
@@ -2350,11 +2362,11 @@ cv.addEventListener('dblclick',e=>{
 function marqueeRect(d, forDraw){
   let x=Math.min(d.sx,d.x2), y=Math.min(d.sy,d.y2), w=Math.abs(d.x2-d.sx), h=Math.abs(d.y2-d.sy);
   const band=d.band||'box';
-  if(band==='vertical'){          // time span — pin pitch axis to full extent
+  if(band==='x'){                 // time span — pin pitch axis to full extent
     if(forDraw){ y=GUT_T; h=Math.max(0,cv.clientHeight-GUT_T); } else { y=-1e6; h=2e6; }
-  } else if(band==='horizontal'){ // pitch span — pin time axis to full extent
+  } else if(band==='y'){          // pitch span — pin time axis to full extent
     if(forDraw){ x=GUT_L; w=Math.max(0,cv.clientWidth-GUT_L); } else { x=-1e6; w=2e6; }
-  } else if(band==='region'){     // whole regions — x snaps out to the regions touched, y pinned to full extent
+  } else if(band==='xy'){         // whole regions — x snaps out to the regions touched, y pinned to full extent
     const sA=Math.max(0,clampSecToContent(xToSec(Math.min(d.sx,d.x2)))-1e-9);
     const sB=Math.max(0,clampSecToContent(xToSec(Math.max(d.sx,d.x2)))-1e-9);
     const rA=regionAtSec(sA), rB=regionAtSec(sB);
@@ -2372,9 +2384,9 @@ function drawMarquee(d){
 function commitMarquee(d){
   const {x,y,w,h}=marqueeRect(d,false);
   const band=d.band||'box', sweptW=Math.abs(d.x2-d.sx), sweptH=Math.abs(d.y2-d.sy);
-  if(band==='box'   && sweptW<3 && sweptH<3) return;   // require a real sweep on the active axis
-  if(band==='vertical'   && sweptW<3) return;
-  if(band==='horizontal' && sweptH<3) return;
+  if(band==='box' && sweptW<3 && sweptH<3) return;     // require a real sweep on the active axis
+  if(band==='x'   && sweptW<3) return;
+  if(band==='y'   && sweptH<3) return;
   // region band: even a bare click selects everything in the region under it — no sweep required
   const mode=d.marqMode||'replace';
   if(mode==='replace'){ selection.clear(); ptSel=new Map(); }
@@ -3351,8 +3363,8 @@ function drawTempo(){
   if(tempoMarq){ const x0=Math.min(tempoMarq.sx,tempoMarq.x2), x1=Math.max(tempoMarq.sx,tempoMarq.x2),
       y0=Math.min(tempoMarq.sy,tempoMarq.y2), y1=Math.max(tempoMarq.sy,tempoMarq.y2);
     let rx0=x0,rx1=x1,ry0=y0,ry1=y1;
-    if(tempoMarq.band==='vertical'||tempoMarq.band==='region'){ ry0=0; ry1=H; }   // time / region span: full height
-    if(tempoMarq.band==='horizontal'){ rx0=GUT_L; rx1=W; }                          // bpm span: full width
+    if(tempoMarq.band==='x'||tempoMarq.band==='xy'){ ry0=0; ry1=H; }   // time / region span: full height
+    if(tempoMarq.band==='y'){ rx0=GUT_L; rx1=W; }                       // bpm span: full width
     tctx.fillStyle=col('--ember')+'22'; tctx.fillRect(rx0,ry0,rx1-rx0,ry1-ry0);
     tctx.strokeStyle=col('--ember'); tctx.lineWidth=1; tctx.setLineDash([4,3]); tctx.strokeRect(rx0,ry0,rx1-rx0,ry1-ry0); tctx.setLineDash([]); }
   // left gutter cap (over guide lines) + title
@@ -3571,17 +3583,17 @@ tempoCv.addEventListener('pointermove',e=>{
 function commitTempoMarq(){
   const M=tempoMarq; const x0=Math.min(M.sx,M.x2),x1=Math.max(M.sx,M.x2),y0=Math.min(M.sy,M.y2),y1=Math.max(M.sy,M.y2);
   const sweptX=x1-x0, sweptY=y1-y0, band=M.band;
-  if(band==='box'       && sweptX<3 && sweptY<3){ tempoSel.clear(); return; }
-  if(band==='vertical'   && sweptX<3){ tempoSel.clear(); return; }
-  if(band==='horizontal' && sweptY<3){ tempoSel.clear(); return; }
+  if(band==='box' && sweptX<3 && sweptY<3){ tempoSel.clear(); return; }
+  if(band==='x'   && sweptX<3){ tempoSel.clear(); return; }
+  if(band==='y'   && sweptY<3){ tempoSel.clear(); return; }
   tempoSel.clear();
-  if(band==='region'){                                   // whole region(s) the sweep touches
+  if(band==='xy'){                                       // whole region(s) the sweep touches
     for(const reg of regions){ const m=mainSystem(reg); if(m.kind==='chronological'||!(m.tempo&&m.tempo.length)) continue;
       const rs=secToX(regionStartSec(reg)), re=secToX(regionStartSec(reg)+regionSecLen(reg));
       if(re>=x0 && rs<=x1) for(const p of m.tempo) tempoSel.add(p); }
     return; }
   for(const h of tempoHandles){ if(!h.p) continue;
-    const inX=(band==='horizontal')||(h.x>=x0&&h.x<=x1), inY=(band==='vertical')||(h.y>=y0&&h.y<=y1);
+    const inX=(band==='y')||(h.x>=x0&&h.x<=x1), inY=(band==='x')||(h.y>=y0&&h.y<=y1);
     if(inX&&inY) tempoSel.add(h.p); }
 }
 function endTempoDrag(){

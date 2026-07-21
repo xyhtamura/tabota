@@ -161,13 +161,14 @@ table.report tr:hover td{background:rgba(24,48,43,0.04);}
     <a class="rolllink" href="roll/" title="Open the visual piano-roll editor"><span class="rl-ico">▦</span><span class="rl-tx"><b>Piano Roll</b><em>draw · edit · MIDI</em></span><span class="rl-arr">→</span></a>
     <a class="rolllink" href="cycla/builder/" title="Open the Cycla subdivision grammar builder"><span class="rl-ico">⌬</span><span class="rl-tx"><b>Cycla</b><em>build meters</em></span><span class="rl-arr">→</span></a>
     <a class="rolllink" href="https://xyhtamura.github.io/antemelos/" title="Open the Antemelos microtonal vocal generator"><span class="rl-ico">∿</span><span class="rl-tx"><b>Antemelos</b><em>melody generator</em></span><span class="rl-arr">→</span></a>
+    <a class="rolllink" href="../stanzuary/" title="Open Stanzuary — Tabota in space"><span class="rl-ico">◳</span><span class="rl-tx"><b>Stanzuary</b><em>text in space</em></span><span class="rl-arr">→</span></a>
     <span class="chip">lang <b>v2.0</b></span>
 
   </div>
 </div>
 
 <p class="lede">
-  <b>Tabota田</b> is an event description language and musical toolset for composing relations across time, pitch, meter, tuning, gesture, and instruction. Tabota eschews time as the primary organizing coordinate system for events and lets events locate, constrain, and measure one another.
+  <b>Tabota田</b> is an event description language and musical toolset for composing relations across time, space, pitch, meter, tuning, gesture, and instruction. Tabota eschews time as the primary organizing coordinate system for events and lets events locate, constrain, and measure one another — and because it never privileged time to begin with, a position can now be a point in <b>space</b> as readily as a moment in time.
 </p>
 
 <p class="lede">
@@ -184,8 +185,12 @@ table.report tr:hover td{background:rgba(24,48,43,0.04);}
 </p>
 
 <p class="lede">
-  <a href="https://xyhtamura.github.io/antemelos/">Antemelos</a> is a compositional tool for generating non-scale, hertz-based microtonal melodies for the human voice. It allows for controlled yet random melodic leaps, enabling the creation of singable vocal lines that sound both primordial and intentionally structured. It hooks natively into Tabota, but also outputs into MIDI through Tabota's engine. 
+  <a href="https://xyhtamura.github.io/antemelos/">Antemelos</a> is a compositional tool for generating non-scale, hertz-based microtonal melodies for the human voice. It allows for controlled yet random melodic leaps, enabling the creation of singable vocal lines that sound both primordial and intentionally structured. It hooks natively into Tabota, but also outputs into MIDI through Tabota's engine.
   </p>
+
+<p class="lede">
+  <a href="../stanzuary/">Stanzuary</a> applies Tabota in <b>space</b>. It is a 3D text editor for spatial text: words can be placed, rotated, and given depth in three dimensions, that exports a Tabota score. Where <span class="fct">position</span> has meant a moment on the clock, in Stanzuary a fragment takes a <b>vector position</b>: a point across named spatial axes, carried inside the same Event, the same score file. 
+</p>
 
 
 <div class="panel"><div class="panel-body"><div class="facets" id="facet-key"></div></div></div>
@@ -265,7 +270,7 @@ const midiToName=(m)=>NOTE[((Math.round(m)%12)+12)%12]+(Math.floor(Math.round(m)
 const FACETS=[
   ['frame','the regime role — a coordinate field its children are read in'],
   ['value','what the Event is: pitch, lane, text, tempo'],
-  ['position','where it sits — exact, relational, or a window'],
+  ['position','where it sits in time or space — exact, relational, vector, or a window'],
   ['extent','its own duration / end'],
   ['lenses','named secondary charts — alternate tempo/meter or tuning'],
   ['events','nested Events — scope, not "during"']
