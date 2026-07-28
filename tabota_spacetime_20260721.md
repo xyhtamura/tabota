@@ -226,9 +226,18 @@ it now.
   Conversion Principle already names for beats↔seconds and note-name↔Hz — is
   there a single general key shape worth factoring out, or are the three
   domains different enough that forcing one shape would be the wrong kind of
-  premature unification?
-
----
+  premature unification? (Related: the *coordinate*-vs-*grid* split — coordinate
+  conversion is easy and continuous, while cyclical/lattice **grids** (meter,
+  scales) are a separate, data-driven concern; see the proposed communal grid
+  module in [tabota_workspace_20260715.md](tabota_workspace_20260715.md) §4.)
+- **Value as a field over a coordinate, and extent as a spatial region.** If a
+  `.tabota` position carries text (or an entire nested score) as its value, the
+  materiality of that value is purely a realizer's doing — the coordinate is the
+  object, the value is the field sampled there. This reframes `extent` too:
+  temporal `extent` is duration; spatial `extent` could be a point / line /
+  plane / volume the value is a field over. Recorded from the author's musings;
+  see the appendix of [../stanzuary/stanzuary.md](../stanzuary/stanzuary.md) for
+  the fuller set (selectable 3D text, nesting-as-recursion, warpable charts).
 
 *spine: the relational half of Tabota's time model was already spatial in
 shape; only the metric half was time-only. Fix that, and time and space are

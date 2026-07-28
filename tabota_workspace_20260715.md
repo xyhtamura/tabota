@@ -157,6 +157,85 @@ effects must embed; that recreates the lockstep.
   advertises which fragment a file uses — an app reads it, then knows whether it can
   fully handle the file or must degrade-and-preserve.
 
+### Partial realization — render what you can, edit ≠ realize, preserve the rest
+
+*(Raised by the user, 2026-07-21, as the model for how any app opens any `.tabota`
+— starting from Stanzuary's own Lite/Full mode switch.)* The reference guide
+already says a realizer "attempts to turn a score into something concrete and
+reports what it cannot." This sharpens that from refuse-or-accept into a
+**gradient**, and it is the interaction-side companion to compat Rule 2
+(preserve-unknown is the *data* floor; this is the *behavior* on top).
+
+- **Render what you can; degrade, don't drop.** Fully unrenderable content
+  disappears from the view and is inert (but still preserved on save, Rule 2).
+  *Partially* renderable content renders degraded — extruded text as flat text,
+  a melting line as a static line — with an **indicator** that it carries
+  properties this app isn't showing. The same rule runs the Stanzuary Lite/Full
+  switch and a future Tabota video-effects host: each shows its slice, flags the
+  rest.
+- **Editing decouples from realizing** — the load-bearing claim. An app may
+  **own** (edit) facets it cannot **realize** (render/play). Stanzuary can edit
+  the control points of a music curve it cannot sonify; Roll can edit the X/Y/Z(t)
+  position curves of a moving line it cannot render as text or animate. So compat
+  "ownership" is *editing rights*, not *rendering ability* — the two come apart,
+  and an app declares the facets it edits independently of what it can show.
+- **The cost is native units.** This is *not* trivial, precisely because Tabota
+  events are stored in their **native units** (beats, Hz, note-names, scene
+  coordinates), not a generic OSC-style `x,y` bus. For Roll to edit a spatial
+  curve, or Stanzuary to edit a pitch curve, each must interpret and present the
+  other's native units — a real adapter per foreign facet, not a free coordinate
+  cast. Budget for it; it is where this gets hard.
+- **Markers, eventually.** A read-only shared reference layer — cue points along
+  the common clock (`z`) that every app can *see* without owning or moving
+  anything, so a Stanzuary author can place text against a musical hit, or a Roll
+  author against a text move, without either app realizing the other's medium.
+
+Rule: this is a principle, not yet a contract clause; if it hardens into one it
+moves into [tabota_compat.md](tabota_compat.md) beside Rule 2, and every
+cross-app editor is checked against it.
+
+### Native units: the coordinate converts (easy), the grid is the missing module
+
+*(Following the native-units cost above — user, 2026-07-21.)* The cost is not
+uniform. Most units are a **rename plus an origin shift**: `x(t)` and `Hz(t)`
+are both just some `f(t)` over the shared clock (Hz one-sided — never negative).
+`resolve.js` already performs this reduction — the Conversion Principle
+(metered↔chronological via bpm, symbolic↔frequency via tuning) maps every native
+coordinate onto the manifold's continuous truth (seconds, Hz). *Coordinate*
+conversion is the easy, already-communal half.
+
+The acrobatics are **meter and scales**, and the reason is that they are not
+coordinates — they are **charts/grids** a frame lays over the continuum: meter is
+a *cyclical* labeling (recurring bars/beats); a scale is a *discrete lattice*
+selected out of continuous pitch. The cyclicality and discreteness live in the
+*grid*, never in the underlying `f(t)`: a bar's onset still has a plain second, a
+scale degree a plain Hz. What resists a continuous `f(t)` is the notation, not the
+position.
+
+So the missing communal piece is not a converter (resolve is the converter) but a
+**grid module** — a callable L1 library taking a frame's native-unit definition
+(a Cycla `.cyc` meter grammar, a Scala `.scl` tuning) and emitting, over the
+continuous axis, its **gridlines + a snap function**. An app that cannot *think*
+in 9/8 or 31-EDO can still *draw and snap to* that grid by calling the module —
+no meter theory or tuning math reimplemented per app, the same win as sharing
+resolve. This absorbs **user-invented units** for free: because Cycla and Scala
+are *data* (`.cyc` / `.scl` files), a grid a user designs is handled generically,
+with no new code in any consumer.
+
+Cross-app edits stay lossless without a round-trip, by the chart model's
+conservation law — *every operation conserves seconds and only rewrites labels*.
+App B edits the conserved continuous coordinate (a point's second, its Hz); App
+A's grid merely re-labels it (which bar, which degree). Nothing is converted *to*
+`f(t)` and back; the coordinate never leaves the continuum, only its chart-label
+is recomputed.
+
+Net: "generalize the meter/time/pitch system outward" is the chart model (built
+for time) generalized to any axis — cyclical or lattice grids as data-driven,
+callable charts over a continuous manifold. Thin on the ground in other editors;
+Tabota is unusually placed for it because resolve, the chart model, and
+Cycla/Scala already exist. Status: proposed L1 **grid module**, unbuilt; gate it
+on a real second consumer, like everything else.
+
 ---
 
 ## 5. What this fixes in today's DEPENDENCIES.md
