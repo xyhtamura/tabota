@@ -1380,3 +1380,93 @@ stands, then the ROADMAP list immediately above this note for build order. First
 item is the chip-row budget pass, which carries the `move·auto` `replace` bug fix as a rider.
 The five contracts (noun collapse, uncounted adverb, act-vs-net, carve-not-displace, tiling-is-
 gesture-local) are settled and should not be re-derived from scratch — cite them.
+
+---
+
+## Development 7 (2026-08-06) — THE CHIP-ROW BUDGET PASS — DONE, logic-proven + browser-measured
+
+Dev-6 ROADMAP item 1. **The fork is settled: option (b) — ONE SIGN ROW** (owner ruling,
+2026-08-06). Contract 1 applied literally rather than hedged: `polarity` (`＋`/`−`) is the
+universal adverb read by every verb, the VERB names the noun (select's noun is SCOPE, draw's is
+MATERIAL), and `replace` is rehomed as what Contract 1 says it is — **scope(−) then scope(+), a
+fused compound**, so it becomes a toggle, not a value of the sign. The 3-chip `selMode` row is
+**deleted**. Net chip budget: −3 chips, +1 toggle.
+
+**Toolbar now:** `polarity ＋ −  [⟳ replace]` · the old `select: replace / ＋incl / −excl` row is gone.
+`⊘ deselect · ⊞ select-all · 🗑 delete` unchanged under the `select` label.
+
+Edits in `roll/index.html`:
+1. `selMode` (3-way string) → `replaceScope` (bool, default true) + **`selOp(e)`**, the single
+   resolver every scope-binding verb calls: Shift ⇒ include, Alt or `polarity==='-'` ⇒ exclude,
+   else `replaceScope ? 'replace' : 'include'`. Shift still wins over Alt (pre-existing order,
+   preserved deliberately). `marqOp(mode)` is the marquee dialect of the same three values.
+2. Call sites collapsed to `selOp(e)`: select pointerdown, **`move·auto` pointerdown**, the
+   tempo-lane select. Both marquee branches read `marqOp(mode)`.
+3. **The `move·auto` `replace` bug is FIXED structurally, not patched** — the old line
+   `polarity==='-' ? 'exclude' : (selMode==='include'||polarity==='+'?'include':'replace')`
+   forced `include` forever because `polarity` defaults to `'+'`. There is now one expression,
+   so the two surfaces cannot drift again.
+4. `⟳ replace` dims (`.dim`) under verbs that don't bind a scope — one helper `syncScopeChips(t)`
+   feeds `setTool` and the `◎ +sel` toggle. The **sign row never dims**: it is universal now.
+5. CSS: `.stage.pol-minus #roll{cursor:not-allowed}` **narrowed to `.pol-minus.tool-draw`** —
+   under select/move, `−` means "take out of the scope", a legal gesture, not a refusal.
+6. **`E` toggles the sign IN PLACE** (was: jump to draw and force `−`). The sign is universal, so
+   yanking the verb contradicted it. `setTool('erase')` alias kept for compat; erase-from-another-
+   verb is now `D` then `E`.
+7. Target pill states the sign under select: `scope:` / `scope(＋):` / `scope(−):`.
+
+**Proven (Node, `verify_setop.cjs` 51/51 — extracts the LIVE `selOp`/`marqOp` from the HTML):**
+the sign is universal (`−` ⇒ exclude under every replace state); `replace` is REACHABLE (the
+Dev-6 bug, asserted directly); accelerator precedence unchanged; marquee dialect; totality over
+every (sign × replace × modifier) cell; and **`−` never yields `replace`** (a take-away must not
+rebind). All 4 `<script>` blocks parse-check clean.
+
+**Browser-measured (localhost:8000/tabota/roll/, page-scope error trap armed, ZERO errors):**
+boot clean (13 notes, `⟳ replace` on+dim under draw); select replace ON → click A then B binds
+**1 note** (rebinds, no accumulation); replace OFF → **2 notes**; `−` click removes from scope;
+Shift adds under replace ON; Alt removes; **`move·auto` replace ON → `move → note 12` then
+`move → note 4`** (the audit measured `move → sel (2)` here — this is the fix, measured);
+`move·auto` replace OFF → `move → sel (2)`; marquee wide → 14 notes, narrow with replace ON →
+rebinds to empty, replace OFF → adds back to 14; `E` from select toggles the sign with the verb
+**unchanged**; draw untouched (deposit 13→14, `draw → NEW` pill); draw(−) free sweep erases
+13→10 with `◎ +sel` ON.
+
+*Method note (the two traps from Dev-5/6 both bit again, both documented there):* the page is
+IIFE-wrapped so nothing is global — drive it with synthetic PointerEvents and **stub
+`cv.setPointerCapture` during the test** (a synthetic `pointerId` throws `NotFoundError` and
+kills the handler before the verb ever runs). And **hover-scan for real hit coordinates first**:
+`GUT_L=70, GUT_T=26`, so probes at `x=68` land in the pitch ruler and read as a silent no-op —
+three "failures" during this smoke were bad coordinates, not defects. Harness lives outside the
+repo (scratchpad `tt/verify_setop.cjs`), same as the earlier suites.
+
+**Needs feel (xyh):** whether `⟳ replace` reads as a toggle rather than a mode; the sign row
+carrying select's meaning as well as draw's (one row, two nouns) in the hand; `E` no longer
+jumping to draw; whether `scope(＋):`/`scope(−):` on the pill is legible or noise.
+
+**Still OPEN (unchanged):** whether `erase·sever` is wanted at all; `+sel` vs `target` naming.
+The `polarity`/`selMode` fork is **closed** by this build.
+
+### ROADMAP (updated build order)
+1. ~~Chip-row budget pass~~ — **DONE (this section).**
+2. **draw·split — NEXT.** Unblocked since Dev-6 Contract 5. Carve (both remnants survive); one
+   toggle, never a row; count from geometry (`pieces = components of span(A) ∖ span(B)`);
+   annihilation falls out of the ≥2-point law. No new law needed.
+3. `erase·sever` (optional; minimum-material degeneracy — severing a 3-point note annihilates it).
+4. Region tool + contextual frame inspector (region row = 2 chips + inheritance toggle).
+5. MIDI settings consolidated into the bend report.
+6. Delete `tabota/gesturelab/` once draw·split lands — ephemeral by ruling.
+
+Further out, not next: meter morphing / variable grid ([tabota_meter_morphing_20260727.md](tabota_meter_morphing_20260727.md)
+— thinking only, nothing settled) and the cycla export round-trip (Stage-2 deferral: `expJson`
+omits `cycleId`/`cycDepth`, so per-region grids are in-session only; owner's format call).
+
+**Working tree at close (2026-08-06):** `roll/index.html` still carries the three earlier
+uncommitted builds (type-kill, verb re-cut, band axis-lock) plus the Dev-5 erase-grammar fix,
+and now this pass. `gesturelab/` still untracked. **Nothing committed** — same "only commit when
+asked" rule.
+
+2026-08-06 — Claude Code — chip-row budget pass: one sign row + `⟳ replace` toggle, `selMode`
+deleted, `move·auto` `replace` bug fixed structurally. Verified: `verify_setop.cjs` 51/51 against
+the live functions, 4/4 script blocks parse-clean, browser-measured on :8000 with the error trap
+armed (zero errors). Undone: nothing from this pass; the feel items above are unresolved, and the
+build order now starts at draw·split.

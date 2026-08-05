@@ -119,9 +119,11 @@ input[type=number].w48{width:48px}
 .stage.tool-select #roll{cursor:default}
 .stage.tool-move #roll{cursor:default}
 .stage.tool-draw #roll{cursor:crosshair}
-.stage.tool-erase #roll,.stage.pol-minus #roll,.stage.pol-minus.tool-draw #roll{cursor:not-allowed}
+.stage.tool-erase #roll,.stage.pol-minus.tool-draw #roll{cursor:not-allowed}
+/* polarity is UNIVERSAL now (Contract 1): under draw it means erase (not-allowed cursor);
+   under select/move it means "take out of the scope" — a legal gesture, so no refusal cursor. */
 .stage.tool-pan #roll{cursor:grab}
-.seg.dim{opacity:.35; pointer-events:none}   /* selMode chips are select's — they grey out under other verbs */
+.seg.dim,button.dim{opacity:.35; pointer-events:none}   /* a control greys out under verbs it can't speak to */
 #targetPill.new{color:var(--tide); font-weight:600}
 #autoSelBtn.on{background:var(--ember); border-color:var(--ember); color:#fff}
 
@@ -355,9 +357,10 @@ select:disabled{
   <div class="group">
     <label>polarity</label>
     <div class="seg" id="polSeg">
-      <button data-pol="+" class="on" title="Deposit / Include (+)">＋</button>
-      <button data-pol="-" title="Take away / Erase (-)">−</button>
+      <button data-pol="+" class="on" title="＋ — the universal add. Draw deposits material; select/move add to the scope">＋</button>
+      <button data-pol="-" title="− — the universal take-away. Draw erases material; select/move take out of the scope (E)">−</button>
     </div>
+    <button id="replaceBtn" class="on dim" title="Replace — a select/move·auto gesture clears the scope before binding the new one (scope − then scope +). Off: gestures accumulate. Shift still adds, Alt still removes, either way">⟳ replace</button>
   </div>
   <div class="group">
     <label>draw</label>
@@ -370,11 +373,6 @@ select:disabled{
   </div>
   <div class="group">
     <label>select</label>
-    <div class="seg dim" id="selModeSeg">
-      <button data-m="replace" class="on" title="Replace — a click or marquee starts a fresh selection">replace</button>
-      <button data-m="include" title="Include — clicks &amp; marquees add to the selection (or hold Shift)">＋ incl</button>
-      <button data-m="exclude" title="Exclude — clicks &amp; marquees remove from the selection (or hold Alt)">− excl</button>
-    </div>
     <button id="deselBtn" title="Deselect all — empties the scope, so draw makes NEW notes again (Esc)">⊘</button>
     <button id="selAllBtn" title="Select every note (Ctrl-A)">⊞</button>
     <button id="delBtn" title="Delete selection (Del / Backspace)">🗑</button>
@@ -1218,7 +1216,19 @@ let ptSel=new Map();                // Map<note, Set<ptIdx>> — granular partia
 function ptSelHas(note,idx){ const s=ptSel.get(note); return !!s && s.has(idx); }
 function granCount(){ let c=0; for(const s of ptSel.values()) c+=s.size; for(const id of selection){ const n=notes.find(x=>x.id===id); if(n) c+=n.pts.length; } return c; }
 function clearGran(){ selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; }
-let selMode='replace';              // 'replace' | 'include' | 'exclude' — how clicks & marquees combine
+let replaceScope=true;              // ⟳ replace — does a select/move·auto gesture CLEAR the scope first?
+/* THE SET-OP — ONE SIGN, read by every verb (Dev-6 Contract 1: polarity is the single adverb;
+   the VERB names the noun — select's noun is SCOPE, draw's is MATERIAL). `replace` is not a
+   third value of the sign: it is scope(−) then scope(+) over one support — the same fused
+   compound `commitFreeOnto` is for material — so it rides as its own toggle, not a chip.
+   Shift/Alt stay accelerators for the pointer-first chips (Shift wins, as before). */
+function selOp(e){
+  if(e && e.shiftKey) return 'include';
+  if((e && e.altKey) || polarity==='-') return 'exclude';
+  return replaceScope ? 'replace' : 'include';
+}
+/* marquee dialect of the same three values */
+function marqOp(mode){ return mode==='exclude' ? 'subtract' : (mode==='include' ? 'add' : 'replace'); }
 let selBand='box';                  // 'box' (free rect) | 'x' (time axis) | 'y' (pitch axis) | 'xy' (both, region-snapped) — THE AXIS-LOCK: one selector read by marquee sweep, slice axis, and move DOF
 /* PINNED: the slice tool reads its cutting axis from selBand (x->time cut, y->pitch cut,
    xy->both, box->no-op) — and MOVE now reads it as an axis-lock (x=time-only, y=pitch-only,
@@ -2057,7 +2067,7 @@ cv.addEventListener('pointerdown',e=>{
   if(t==='select'){
     dragHist=histSnapshot();
     const h=selectHit(p.x,p.y);
-    const mode = e.shiftKey ? 'include' : (e.altKey ? 'exclude' : selMode);
+    const mode = selOp(e);
     if(h){
       tempoSel.clear(); segSel=null;
       if(mode==='replace'){ selection.clear(); ptSel=new Map(); pointSel=null; }
@@ -2067,7 +2077,7 @@ cv.addEventListener('pointerdown',e=>{
       changed(); return;
     }
     // empty → marquee: selects POINTS; full coverage of a note promotes to the whole object (mergeSel)
-    const marqMode = (mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
+    const marqMode = marqOp(mode);
     if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
     drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand};
     changed(); return;
@@ -2079,7 +2089,7 @@ cv.addEventListener('pointerdown',e=>{
     dragHist=histSnapshot();
     const h=selectHit(p.x,p.y);
     if(autoSelect){                                       // ON: cursor proximity is authoritative; it rebinds the scope to what it grabs
-      const mode = polarity==='-' ? 'exclude' : (selMode==='include'||polarity==='+'?'include':'replace');
+      const mode = selOp(e);          // same sign as select reads — `replace` is reachable here now
       if(h && mode!=='exclude'){
         segSel=null; tempoSel.clear();
         if(mode==='replace'){ selection.clear(); ptSel=new Map(); pointSel=null; }
@@ -2092,7 +2102,7 @@ cv.addEventListener('pointerdown',e=>{
         }
         changed(); return;
       }
-      const marqMode = (polarity==='-'||mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
+      const marqMode = marqOp(mode);
       if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
       drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand,whole:true};
       changed(); return;
@@ -2632,6 +2642,11 @@ document.querySelectorAll('#tools button').forEach(b=>b.addEventListener('click'
   if(t==='draw' && view.tool==='draw' && drawMode==='pen' && penNote){ finalizePen(); return; }  // tap draw again to finish the pen path
   setTool(t);
 }));
+/* ⟳ replace speaks only to the verbs that BIND a scope (select, and move when auto is on) */
+function syncScopeChips(t){
+  const rb=document.getElementById('replaceBtn'); if(!rb) return;
+  rb.classList.toggle('dim', t!=='select' && !(autoSelect && t==='move'));
+}
 function setPolarity(p){
   polarity=p;
   document.querySelectorAll('#polSeg button').forEach(x=>x.classList.toggle('on', x.dataset.pol===p));
@@ -2644,7 +2659,7 @@ function setTool(t){
   if(penNote && t!=='draw') finalizePen(); view.tool=t;
   // SELECTION PERSISTS across tools — it is the SCOPE the verbs read (select binds, move/draw consume)
   document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x.dataset.tool===t));
-  const sm=document.getElementById('selModeSeg'); if(sm) sm.classList.toggle('dim', t!=='select' && !(autoSelect && t==='move'));   // set-op chips are select's alone
+  syncScopeChips(t);   // the sign row is universal; only ⟳ replace is scope-only
   stage.className='stage tool-'+t+(polarity==='-'?' pol-minus':''); cv.style.cursor=''; changed();
 }
 document.querySelectorAll('#polSeg button').forEach(b=>b.addEventListener('click',()=>{
@@ -2668,7 +2683,7 @@ document.getElementById('delBtn').onclick=()=>{ deleteSelection(); changed(); };
 document.getElementById('autoSelBtn').onclick=()=>{
   autoSelect=!autoSelect;
   document.getElementById('autoSelBtn').classList.toggle('on',autoSelect);
-  const sm=document.getElementById('selModeSeg'); if(sm) sm.classList.toggle('dim', view.tool!=='select' && !(autoSelect && view.tool==='move'));
+  syncScopeChips(view.tool);
   flash(autoSelect?'auto-select ON (+sel) — the cursor picks the target':'auto-select OFF — the selection is authoritative');
   changed();
 };
@@ -3139,11 +3154,13 @@ function splitSelection(){
 }
 document.getElementById('splitBtn').onclick=splitSelection;
 
-/* select-mode control (replace / include / exclude) */
-document.querySelectorAll('#selModeSeg button').forEach(b=>b.addEventListener('click',()=>{
-  selMode=b.dataset.m;
-  document.querySelectorAll('#selModeSeg button').forEach(x=>x.classList.toggle('on',x===b));
-}));
+/* ⟳ replace — the scope compound (scope(−) then scope(+)); the sign itself lives in #polSeg */
+document.getElementById('replaceBtn').onclick=()=>{
+  replaceScope=!replaceScope;
+  document.getElementById('replaceBtn').classList.toggle('on',replaceScope);
+  flash(replaceScope?'replace ON — a select gesture clears the scope first':'replace OFF — select gestures add to the scope');
+  updateTargetPill(lastMouse);
+};
 document.querySelectorAll('#selBandSeg button').forEach(b=>b.addEventListener('click',()=>{
   selBand=b.dataset.b;
   document.querySelectorAll('#selBandSeg button').forEach(x=>x.classList.toggle('on',x===b));
@@ -3237,7 +3254,9 @@ function updateTargetPill(hoverP){
     txt = selPresent ? ('move → '+(pool.size===1?('note '+[...pool][0]):('sel ('+pool.size+')'))) : (autoSelect?'move → hover':'move → –');
   } else if(view.tool==='select'){
     const pts=[...ptSel.values()].reduce((s,v)=>s+v.size,0);
-    txt = 'scope: '+(selPresent ? (selection.size+' note'+(selection.size!==1?'s':'')+(pts?(' +'+pts+'pt'):'')) : 'empty');
+    // the sign is universal: under select it names what the next click does to the SCOPE
+    const op = polarity==='-' ? 'scope(−): ' : (replaceScope ? 'scope: ' : 'scope(＋): ');
+    txt = op+(selPresent ? (selection.size+' note'+(selection.size!==1?'s':'')+(pts?(' +'+pts+'pt'):'')) : 'empty');
   }
   el.textContent=txt||'–';
   el.classList.toggle('new', view.tool==='draw' && polarity==='+' && /NEW$/.test(txt));
@@ -3266,8 +3285,7 @@ window.addEventListener('keydown',e=>{
   if(e.code==='Escape'){ e.preventDefault(); deselectAll(); return; }              // universal deselect (accelerator; ⊘ is the pointer-first control)
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); return; }
   if(e.code==='KeyE' && !e.ctrlKey && !e.metaKey && !e.altKey){
-    if(view.tool!=='draw'){ setTool('draw'); setPolarity('-'); }
-    else setPolarity(polarity==='+'?'-':'+');
+    setPolarity(polarity==='+'?'-':'+');   // the sign is universal (Contract 1) → toggle IN PLACE, never yank the verb
     return;
   }
   const map={KeyV:'select',KeyM:'move',KeyD:'draw',KeyS:'slice'};
@@ -3732,7 +3750,7 @@ tempoCv.addEventListener('pointerdown',e=>{
       tempoSel.delete(h.p); tempoDeleteSet([h.p]); tempoMapDirty(); changed(); commitDragHist(); } return; }
 
   if(tool==='select'){
-    const mode = e.shiftKey ? 'include' : (e.altKey ? 'exclude' : selMode);
+    const mode = selOp(e);
     const wipeNote=()=>{ clearGran(); tempoSel.clear(); draw(); };              // replace clears BOTH surfaces + repaints roll
     const h=tempoHitHandle(x,y);
     if(h&&h.p){
