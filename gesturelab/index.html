@@ -1,0 +1,375 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gesture Lab — arity/polarity probe</title>
+<!--
+  GESTURE LAB — a throwaway probe, NOT a Roll consumer.
+  Deliberately shares NOTHING with tabota/roll: no resolver, no schema, no CSS substrate,
+  no chart/region/tuning layer. Nothing here is a shared artifact; DEPENDENCIES.md records
+  no edge for this file. If you ever find yourself importing from ../roll/, stop — the whole
+  point is that this can drift freely without invalidating anything else.
+
+  WHAT IT CAN DECIDE: arity accounting (Δentities / Δboundaries), degenerate cases,
+  carve-vs-displace, erase heal-vs-sever, merge-across-gap, chip ergonomics.
+  WHAT IT CANNOT DECIDE: anything chart-dependent — snapping under a tempo curve, px-space
+  vs beat-space containment, region extrapolation. Time here is UNIFORM. A green verdict
+  here is necessary, not sufficient.
+
+  ENCODING NOTE: points are ABSOLUTE {b,p} (beat, pitch-semitone), not Roll's t/dur
+  normalisation. That is on purpose — normalisation is an encoding detail that obscures
+  the arity reasoning this lab exists to test.
+-->
+<style>
+  :root{ --bg:#f4f1ea; --ink:#22201d; --line:#c9c2b4; --tide:#11897e; --ember:#c4562f;
+         --ghost:#8a8377; --sel:#1a6fb5; --panel:#fffdf8; }
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.45 ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:8px 12px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  h1{font-size:14px;margin:0;font-weight:650;letter-spacing:.02em}
+  .sub{color:var(--ghost);font-size:12px}
+  .wrap{display:flex;gap:0;align-items:stretch;min-height:calc(100vh - 46px)}
+  .side{width:290px;flex:0 0 290px;border-right:1px solid var(--line);padding:10px 12px;background:var(--panel);overflow:auto}
+  .stage{flex:1;position:relative;min-width:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+  fieldset{border:1px solid var(--line);border-radius:4px;margin:0 0 10px;padding:7px 9px 9px}
+  legend{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ghost);padding:0 4px}
+  label.row{display:flex;gap:7px;align-items:flex-start;margin:3px 0;cursor:pointer}
+  label.row input{margin-top:2px;flex:0 0 auto}
+  label.row span b{font-weight:600}
+  label.row span i{color:var(--ghost);font-style:normal;display:block;font-size:11.5px}
+  .seg{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0}
+  .seg button{font:inherit;padding:3px 9px;border:1px solid var(--line);background:#fff;border-radius:3px;cursor:pointer}
+  .seg button.on{background:var(--tide);border-color:var(--tide);color:#fff}
+  .acct{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  .acct table{border-collapse:collapse;width:100%}
+  .acct td{padding:1px 0}
+  .acct td:last-child{text-align:right;font-weight:600}
+  .delta{color:var(--ember)}
+  .ok{color:var(--tide)}
+  #log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;max-height:230px;overflow:auto;
+       border:1px solid var(--line);border-radius:4px;padding:6px;background:#fff}
+  #log div{padding:1px 0;border-bottom:1px dotted #e6e0d4}
+  #log div:last-child{border-bottom:0}
+  #log .hd{color:var(--tide);font-weight:600}
+  #err{display:none;position:fixed;left:0;right:0;bottom:0;background:#b3261e;color:#fff;padding:7px 12px;
+       font-family:ui-monospace,monospace;font-size:12px;z-index:9}
+  .hint{color:var(--ghost);font-size:11.5px;margin:6px 0 0}
+  button.act{font:inherit;padding:4px 10px;border:1px solid var(--line);background:#fff;border-radius:3px;cursor:pointer;margin:2px 3px 2px 0}
+</style>
+
+<header>
+  <h1>Gesture Lab</h1>
+  <span class="sub">arity / polarity probe · uniform time · no charts · not a Roll consumer</span>
+</header>
+
+<div class="wrap">
+  <div class="side">
+    <fieldset><legend>verb</legend>
+      <div class="seg" id="toolSeg">
+        <button data-t="draw" class="on">draw</button>
+        <button data-t="select">select</button>
+        <button data-t="erase">erase</button>
+      </div>
+      <div class="seg" id="modeSeg">
+        <button data-m="line" class="on">line</button>
+        <button data-m="free">freehand</button>
+      </div>
+      <p class="hint">Draw with a note SELECTED to exercise draw·split. Draw with nothing selected to make a new entity.</p>
+    </fieldset>
+
+    <fieldset><legend>rule set — the variations</legend>
+      <label class="row"><input type="checkbox" id="rTiling" checked>
+        <span><b>tiling ON</b><i>the incumbent must yield any time B occupies (one pitch per time)</i></span></label>
+      <label class="row"><input type="checkbox" id="rDisplace">
+        <span><b>displace, not carve</b><i>reading 3: A's tail past B is discarded rather than kept</i></span></label>
+      <label class="row"><input type="checkbox" id="rSever">
+        <span><b>erase severs</b><i>interior erase cuts the note in two instead of healing over</i></span></label>
+      <label class="row"><input type="checkbox" id="rMergeGap" checked>
+        <span><b>merge may invent material</b><i>joining across a gap fabricates the connecting segment</i></span></label>
+      <label class="row"><input type="checkbox" id="rSnap" checked>
+        <span><b>snap to grid</b><i>uniform grid only — no tempo curve exists here</i></span></label>
+    </fieldset>
+
+    <fieldset><legend>accounting</legend>
+      <div class="acct">
+        <table>
+          <tr><td>entities</td><td id="aEnt">0</td></tr>
+          <tr><td>boundaries</td><td id="aBnd">0</td></tr>
+          <tr><td>points</td><td id="aPts">0</td></tr>
+          <tr><td>bijective?</td><td id="aBij">—</td></tr>
+        </table>
+      </div>
+      <p class="hint">Boundaries = 2 per entity (start + end). The claim under test: as B's overlap
+      grows interior → edge → total, ΔB goes <b>+2 → 0 → −2</b>.</p>
+    </fieldset>
+
+    <fieldset><legend>actions</legend>
+      <button class="act" id="bMerge">merge selected</button>
+      <button class="act" id="bDel">delete selected</button>
+      <button class="act" id="bClear">clear all</button>
+      <button class="act" id="bSeed">seed</button>
+      <button class="act" id="bUndo">undo</button>
+    </fieldset>
+
+    <fieldset><legend>gesture log</legend>
+      <div id="log"></div>
+    </fieldset>
+  </div>
+  <div class="stage"><canvas id="cv"></canvas></div>
+</div>
+<div id="err"></div>
+
+<script>
+/* Fail LOUDLY. Today's lesson: the console pipe can be silently dead, so an undefined
+   function looked exactly like a working feature. Anything thrown lands on screen. */
+window.addEventListener('error', e=>{
+  const el=document.getElementById('err');
+  el.style.display='block'; el.textContent='✖ '+e.message+'  ('+e.filename+':'+e.lineno+')';
+});
+
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const PXB=64, PXS=13, ORX=46, ORY=24;      // px per beat, px per semitone, origin gutters
+const PMAX=36;                              // pitch rows drawn
+let notes=[], NID=1, tool='draw', mode='line', drag=null, undoStack=[];
+
+const R=id=>document.getElementById(id).checked;
+const bx=b=>ORX+b*PXB, xb=x=>(x-ORX)/PXB;
+const py=p=>ORY+(PMAX-p)*PXS, yp=y=>PMAX-(y-ORY)/PXS;
+const gridDiv=4;
+const snapB=b=>R('rSnap')?Math.round(b*gridDiv)/gridDiv:b;
+const snapP=p=>R('rSnap')?Math.round(p):p;
+
+/* ---- entity helpers. A note is an ordered list of absolute {b,p}; it needs >=2 points
+   to exist at all (this is the well-formedness rule, not a special-cased annihilation). ---- */
+const first=n=>n.pts[0], last=n=>n.pts[n.pts.length-1];
+const span=n=>[first(n).b, last(n).b];
+const wellFormed=n=>n.pts.length>=2 && (last(n).b-first(n).b)>1e-9;
+function pitchAt(n,b){                       // linear interpolation along the curve
+  const P=n.pts;
+  if(b<=P[0].b) return P[0].p;
+  if(b>=P[P.length-1].b) return P[P.length-1].p;
+  for(let i=0;i<P.length-1;i++){ const a=P[i],c=P[i+1];
+    if(b>=a.b&&b<=c.b){ const k=(b-a.b)/((c.b-a.b)||1e-9); return a.p+(c.p-a.p)*k; } }
+  return P[P.length-1].p;
+}
+function mk(pts){ return {id:NID++, pts, sel:false}; }
+
+/* ---- the core operation under test ----
+   Remove the time window [s,e] from A.
+   carve   → keep both remnants  (readings 1 & 2, and what commitFreeOnto already does)
+   displace→ keep only the head   (reading 3: A's tail is discarded)
+   Returns the surviving pieces, so pieces.length-1 IS the arity delta for A. */
+function subtractWindow(n, s, e, displace){
+  const head=[], tail=[];
+  for(const q of n.pts){ if(q.b<s-1e-9) head.push({...q}); else if(q.b>e+1e-9) tail.push({...q}); }
+  const sp=span(n);
+  if(s>sp[0]+1e-9 && s<sp[1]-1e-9) head.push({b:s, p:pitchAt(n,s)});      // interpolated seam
+  if(e>sp[0]+1e-9 && e<sp[1]-1e-9) tail.unshift({b:e, p:pitchAt(n,e)});
+  const pieces=[];
+  if(head.length>=2) pieces.push(mk(head));
+  if(!displace && tail.length>=2) pieces.push(mk(tail));
+  return pieces.filter(wellFormed);
+}
+
+/* ---- gesture commit ---- */
+function commitStroke(raw){
+  if(raw.length<2) return;
+  const B=mk(raw);
+  if(!wellFormed(B)) return;
+  const targets=notes.filter(n=>n.sel);
+  const before=acct();
+  let note='';
+  if(R('rTiling') && targets.length){
+    const [s,e]=span(B); const displace=R('rDisplace');
+    let out=[]; let touched=0;
+    for(const A of notes){
+      if(!A.sel){ out.push(A); continue; }
+      const [as,ae]=span(A);
+      if(ae<s+1e-9 || as>e-1e-9){ out.push(A); continue; }   // no time overlap → untouched
+      touched++;
+      const pieces=subtractWindow(A, s, e, displace);
+      out.push(...pieces);
+      // the quantity under test is A's OWN arity change — the scene delta also carries B's
+      // arrival (+1 entity / +2 boundaries), which masks the sign passing through zero.
+      const dA=pieces.length-1, sgn=v=>(v>0?'+':'')+v;
+      note += ` A#${A.id}→${pieces.length} [ΔE_A ${sgn(dA)} ΔB_A ${sgn(dA*2)}]`;
+    }
+    notes=out;
+    notes.push(B);
+    log('draw·split', `material(+1 entity B#${B.id})${note||' (no overlap)'}`, before);
+  } else {
+    notes.push(B);
+    log('draw(+)', `material(+1 entity B#${B.id})`, before);
+  }
+  notes.forEach(n=>n.sel=false); B.sel=true;
+  render();
+}
+
+function eraseAt(x,y){
+  const before=acct();
+  for(const n of notes){
+    for(let i=0;i<n.pts.length;i++){
+      if(Math.hypot(bx(n.pts[i].b)-x, py(n.pts[i].p)-y)<9){
+        const isInterior = i>0 && i<n.pts.length-1;
+        if(isInterior && R('rSever')){
+          const A=mk(n.pts.slice(0,i).map(q=>({...q}))), C=mk(n.pts.slice(i+1).map(q=>({...q})));
+          const keep=[A,C].filter(wellFormed);
+          notes=notes.filter(m=>m!==n); notes.push(...keep);
+          log('erase·sever', `material(−1 pt) boundary(+) → ${keep.length} piece(s)`, before);
+        } else {
+          n.pts.splice(i,1);
+          if(!wellFormed(n)){ notes=notes.filter(m=>m!==n);
+            log('erase', `material(−1 pt) → entity annihilates (fewer than 2 points)`, before); }
+          else log('erase·heal', `material(−1 pt), boundary unchanged`, before);
+        }
+        render(); return;
+      }
+    }
+  }
+}
+
+function mergeSelected(){
+  const sel=notes.filter(n=>n.sel);
+  if(sel.length<2){ log('merge','needs 2+ selected', acct()); return; }
+  const before=acct();
+  sel.sort((a,b)=>first(a).b-first(b).b);
+  let gaps=0;
+  for(let i=0;i<sel.length-1;i++) if(first(sel[i+1]).b > last(sel[i]).b+1e-9) gaps++;
+  if(gaps && !R('rMergeGap')){ log('merge', `refused — ${gaps} gap(s), and inventing material is off`, before); return; }
+  const pts=[];
+  for(const n of sel) for(const q of n.pts) pts.push({...q});
+  pts.sort((a,b)=>a.b-b.b);
+  notes=notes.filter(n=>!n.sel); const M=mk(pts); M.sel=true; notes.push(M);
+  log('merge', `boundary(−${(sel.length-1)*2})${gaps?` · invented ${gaps} connecting segment(s)`:''}`, before);
+  render();
+}
+
+/* ---- accounting: the falsifiable part ---- */
+function acct(){
+  const ent=notes.length, bnd=notes.length*2, pts=notes.reduce((s,n)=>s+n.pts.length,0);
+  return {ent,bnd,pts};
+}
+function bijective(){                        // one pitch per time, across all entities
+  for(let i=0;i<notes.length;i++) for(let j=i+1;j<notes.length;j++){
+    const [a0,a1]=span(notes[i]), [b0,b1]=span(notes[j]);
+    if(a0<b1-1e-9 && b0<a1-1e-9) return false;
+  }
+  return true;
+}
+function log(kind, detail, before){
+  const a=acct(), dE=a.ent-before.ent, dB=a.bnd-before.bnd;
+  const sg=v=>(v>0?'+':'')+v;
+  const el=document.getElementById('log'), d=document.createElement('div');
+  d.innerHTML=`<span class="hd">${kind}</span> ${detail} · <span class="delta">ΔE ${sg(dE)} · ΔB ${sg(dB)}</span>`;
+  el.prepend(d);
+  while(el.children.length>60) el.lastChild.remove();
+}
+function refreshAcct(){
+  const a=acct();
+  document.getElementById('aEnt').textContent=a.ent;
+  document.getElementById('aBnd').textContent=a.bnd;
+  document.getElementById('aPts').textContent=a.pts;
+  const b=bijective(), el=document.getElementById('aBij');
+  el.textContent=b?'yes':'NO — overlap';
+  el.className=b?'ok':'delta';
+}
+
+/* ---- render ---- */
+function fit(){ const r=cv.parentElement.getBoundingClientRect(), d=devicePixelRatio||1;
+  cv.width=r.width*d; cv.height=r.height*d; ctx.setTransform(d,0,0,d,0,0); render(); }
+function render(){
+  const W=cv.clientWidth, H=cv.clientHeight;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#e3ddd0'; ctx.lineWidth=1;
+  for(let b=0;bx(b)<W;b+=1/gridDiv){ ctx.globalAlpha=(Math.abs(b-Math.round(b))<1e-9)?1:.45;
+    ctx.beginPath(); ctx.moveTo(bx(b)+.5,ORY); ctx.lineTo(bx(b)+.5,H); ctx.stroke(); }
+  ctx.globalAlpha=1;
+  for(let p=0;p<=PMAX;p++){ ctx.globalAlpha=(p%12===0)?.9:.35;
+    ctx.beginPath(); ctx.moveTo(ORX,py(p)+.5); ctx.lineTo(W,py(p)+.5); ctx.stroke(); }
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#8a8377'; ctx.font='10px ui-monospace,monospace';
+  for(let b=0;bx(b)<W;b++) ctx.fillText(b, bx(b)+2, 14);
+
+  for(const n of notes){
+    ctx.strokeStyle=n.sel?getCSS('--sel'):getCSS('--ink');
+    ctx.lineWidth=n.sel?2.5:1.8; ctx.beginPath();
+    n.pts.forEach((q,i)=> i?ctx.lineTo(bx(q.b),py(q.p)):ctx.moveTo(bx(q.b),py(q.p)));
+    ctx.stroke();
+    ctx.fillStyle=n.sel?getCSS('--sel'):getCSS('--ember');
+    for(const q of n.pts){ ctx.beginPath(); ctx.arc(bx(q.b),py(q.p),3,0,7); ctx.fill(); }
+    // entity boundaries — the thing being counted
+    ctx.strokeStyle=getCSS('--tide'); ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    for(const q of [first(n),last(n)]){ ctx.beginPath(); ctx.moveTo(bx(q.b)+.5,ORY); ctx.lineTo(bx(q.b)+.5,cv.clientHeight); ctx.stroke(); }
+    ctx.setLineDash([]);
+    ctx.fillStyle=getCSS('--ghost'); ctx.font='10px ui-monospace,monospace';
+    ctx.fillText('#'+n.id, bx(first(n).b)+3, py(first(n).p)-7);
+  }
+  if(drag&&drag.raw&&drag.raw.length>1){
+    ctx.strokeStyle=getCSS('--ember'); ctx.lineWidth=1.6; ctx.setLineDash([5,3]); ctx.beginPath();
+    drag.raw.forEach((q,i)=> i?ctx.lineTo(bx(q.b),py(q.p)):ctx.moveTo(bx(q.b),py(q.p)));
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  refreshAcct();
+}
+const getCSS=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* ---- pointer ---- */
+const pos=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; };
+cv.addEventListener('pointerdown',e=>{
+  cv.setPointerCapture(e.pointerId);
+  const p=pos(e); pushUndo();
+  if(tool==='erase'){ eraseAt(p.x,p.y); return; }
+  if(tool==='select'){
+    const hit=pick(p.x,p.y);
+    if(!e.shiftKey) notes.forEach(n=>n.sel=false);
+    if(hit) hit.sel=!hit.sel || e.shiftKey ? true : hit.sel;
+    render(); return;
+  }
+  drag={raw:[{b:snapB(xb(p.x)), p:snapP(yp(p.y))}]};
+});
+cv.addEventListener('pointermove',e=>{
+  if(!drag) return; const p=pos(e);
+  const q={b:snapB(xb(p.x)), p:snapP(yp(p.y))};
+  if(mode==='line'){ drag.raw=[drag.raw[0], q]; }
+  else { const lastQ=drag.raw[drag.raw.length-1];
+    if(q.b>lastQ.b+1e-9) drag.raw.push(q); }
+  render();
+});
+cv.addEventListener('pointerup',()=>{
+  if(!drag) return; const raw=drag.raw; drag=null;
+  if(raw.length>=2 && Math.abs(raw[raw.length-1].b-raw[0].b)>1e-9) commitStroke(raw);
+  else render();
+});
+function pick(x,y){
+  for(let i=notes.length-1;i>=0;i--){ const n=notes[i];
+    for(let s=0;s<n.pts.length-1;s++){
+      const a=n.pts[s], c=n.pts[s+1];
+      if(distSeg(x,y,bx(a.b),py(a.p),bx(c.b),py(c.p))<8) return n;
+    } }
+  return null;
+}
+function distSeg(px,py_,ax,ay,bx_,by){
+  const dx=bx_-ax, dy=by-ay, L=dx*dx+dy*dy||1e-9;
+  let t=((px-ax)*dx+(py_-ay)*dy)/L; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+t*dx), py_-(ay+t*dy));
+}
+
+/* ---- undo / chrome ---- */
+function pushUndo(){ undoStack.push(JSON.stringify(notes)); if(undoStack.length>80) undoStack.shift(); }
+document.getElementById('bUndo').onclick=()=>{ if(!undoStack.length) return;
+  notes=JSON.parse(undoStack.pop()); render(); };
+document.getElementById('bMerge').onclick=()=>{ pushUndo(); mergeSelected(); };
+document.getElementById('bDel').onclick=()=>{ pushUndo(); const b=acct();
+  notes=notes.filter(n=>!n.sel); log('delete','selected entities removed',b); render(); };
+document.getElementById('bClear').onclick=()=>{ pushUndo(); const b=acct(); notes=[]; log('clear','',b); render(); };
+document.getElementById('bSeed').onclick=()=>{ pushUndo(); const b=acct();
+  notes=[ mk([{b:0.5,p:12},{b:3.5,p:18}]), mk([{b:4.5,p:22},{b:6,p:14}]) ];
+  log('seed','two entities',b); render(); };
+document.querySelectorAll('#toolSeg button').forEach(x=>x.onclick=()=>{
+  tool=x.dataset.t; document.querySelectorAll('#toolSeg button').forEach(y=>y.classList.toggle('on',y===x));
+  cv.style.cursor = tool==='erase'?'not-allowed':(tool==='select'?'default':'crosshair'); });
+document.querySelectorAll('#modeSeg button').forEach(x=>x.onclick=()=>{
+  mode=x.dataset.m; document.querySelectorAll('#modeSeg button').forEach(y=>y.classList.toggle('on',y===x)); });
+document.querySelectorAll('input[type=checkbox]').forEach(c=>c.addEventListener('change',render));
+addEventListener('resize',fit);
+document.getElementById('bSeed').click(); fit();
+</script>

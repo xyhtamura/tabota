@@ -1,12 +1,17 @@
-# Tabota — Development Handover
+# Tabota Roll — Rolling Roadmap / Dev Log
 
 *For future development sessions (human or LLM). Read this first; then the two
-contracts. Last updated: June 2026, end of the **variable-tempo track** build
-(curve engine + communication model + in-lane contextual editor).*
+contracts. This is a LIVING document, not a point-in-time handover — it accretes
+Development N sections as work lands and gets renamed/restructured only when it
+grows unwieldy, not on a schedule. **Renamed from `tabota_handover_20260627.md`
+on 2026-07-29** (owner: "it's a rolling roadmap/dev doc," not a handover) — same
+file, same git history (`git log --follow` or `git mv` history), content
+unchanged at the rename point. If a stray reference to the old filename ever
+turns up outside `.git/`, it's stale; this file is canonical.*
 
-*Supersedes `tabota_handover_20260612.md`; §§1–3, 9–10 carry forward largely
-unchanged. The new material is the tempo subsystem (§4.1, §5.8–5.13), the curve
-vocabulary (§4.2), and the rewritten deferred list (§8).*
+*Origin: supersedes `tabota_handover_20260612.md`; §§1–3, 9–10 from that lineage
+carry forward largely unchanged. Development N sections (§§ below "## Development
+1" onward) are the live edge — read from the bottom up for the current state.*
 
 ---
 
@@ -1104,3 +1109,274 @@ Shift-drag reflex cleanly; is x/y/xy legible as a mode you hold across a gesture
 move feel like the constraint you meant. **PINNED (unchanged):** band still conflates
 marquee-sweep / slice-axis / move-DOF into one selector — the doc's re-separation note (a
 pitch-bounded time slice a shared band can't express) still stands if that case ever arrives.
+
+### Cut 3 — POLARITY / ERASE-DISSOLVE — audit of the landed work (2026-07-28)
+Audited the polarity build (erase dissolved into `draw(−)`, `🗑` delete, `◎ +sel`, `E` key).
+UI layer and `move·auto` wiring were present and correct. Two defects found, both proven
+in-browser, not by reading:
+
+**(1) BLOCKER — the entire `draw(−)` erasure grammar was dead code. FIXED.**
+`erasePointsNear` and `commitMarqueeErase` were *called* (3 call sites) but never *defined*
+anywhere in the file. Every single `draw(−)` gesture threw `ReferenceError` — free(−) on
+pointerdown *and* every pointermove; tap-erase and marquee-erase on pointerup (the tap path
+throws too, because it unconditionally starts a `marqueeErase` drag afterward). Because the
+throw lands at l.2367 *before* `drag=null` at l.2384, the drag never cleared.
+
+*Method note worth keeping:* this was invisible to every cheap check. The file is
+**parse-clean** (an undefined function is a runtime, not syntax, error), the node suites
+(30/30, 35/35) don't touch these paths, and `read_console_messages` reported **"No console
+logs"** — a canary error proved the console pipe is **not capturing** page errors at all.
+`typeof` probes also all read `undefined`, because block 2 is wrapped in
+`if(typeof document!=='undefined')(function(){…})()` — nothing is global. The only probe that
+worked: inject a page-scope `window.addEventListener('error', …)` that writes messages into a
+`data-` attribute, then read the attribute. **Use that trap for any future Roll smoke test.**
+
+Fix: wrote the missing pair plus shared helpers `erasePool()` / `eraseFrom()` / `eraseHitsIn()`
+next to `commitMarquee`. Scope law is the hard law in reverse — **+sel OFF ⇒ erase may never
+reach outside the bound scope**; +sel ON ⇒ cursor is authoritative. Points tested in rendered
+px under each note's own chart (GRID LAW sibling). ≥2-point law stays in `removePoints`.
+Two traps designed against, both real: (a) the pool is captured **once** at drag start and
+carried on the drag — re-deriving it mid-sweep would let the brush eat its own scope and stall
+after the first point; (b) the old tap path called `clearGran()`, destroying the scope after
+every single-point erase — replaced by `ptSel.delete(n)` (indices go stale) while the
+whole-note scope **survives**, since scope is what the next verb reads.
+
+Proven in-browser (error trap armed, zero errors): full-field marquee in +sel ON 13→4 notes;
+**empty scope + full-field sweep → 13 unchanged** (erase refuses to leave the scope);
+scope=1 note + full-field sweep → exactly that one consumed (13→12); free(−) serpentine brush
+13→1 (sweep continuity — a collapsed pool would have stalled at 1 erase); **one undo restores
+the whole sweep** (13→1→undo→13, stack emptied, redo armed). Parse-clean; 30/30 and 35/35 green.
+
+**(2) OPEN — `replace` is unreachable in `move·auto`.** At l.1972:
+`polarity==='-' ? 'exclude' : (selMode==='include'||polarity==='+' ? 'include' : 'replace')`.
+Since `polarity` defaults to `'+'`, the `||polarity==='+'` clause forces `'include'` **always**,
+so the `replace` chip is dead there. Measured: `selMode=replace`, `polarity=+`, click note A
+then note B → pill goes `move → note 2` then `move → sel (2)` — it accumulated. This
+contradicts the spec ("move auto (replace) deselects and reselects"). Left UNFIXED on purpose:
+the one-line repair is `polarity==='-' ? 'exclude' : selMode`, but it lands inside the open
+question below, which is xyh's call.
+
+**THE FORK (xyh decides): two rows encode the same three-way set-op.** `polarity` (+/−) and
+`selMode` (replace/incl/excl) overlap — both can say "exclude", and they're wired
+inconsistently (select reads `selMode` only; `move·auto` reads both; draw reads `polarity`
+only). Options: (a) **restore + divide by verb** — `polarity` is draw's adverb, `selMode` is
+select's, `move·auto` defers to `selMode` and only reads `polarity` for `−`; smallest change,
+keeps the 3-way; (b) **collapse into polarity** — `+`/`−` become the universal set-op and
+`replace` becomes a separate reset/arity control, not a polarity; fewest chips, but `replace`
+needs a new home; (c) keep both and make `selMode` visible only for select/move·auto (it
+already dims). Recommendation: **(a) now** (it un-breaks `replace` immediately and is
+reversible), then revisit (b) during the chip-row budget pass, since `replace` is arguably
+arity, not polarity — the same distinction the split/merge sketch is circling.
+
+### Development 5 (2026-07-29) — THE NOUN COLLAPSE + the Gesture Lab
+
+**The collapse (proposed, then probed).** Owner's l.864 hunch — "the same adverb set
+(split / merge / + / −) targeting a DIFFERENT noun… adverbs are universal, the noun varies"
+— resolves one level further down: **split IS `+` and merge IS `−`, applied to BOUNDARIES
+instead of MATERIAL.** There is no second adverb row. One sign, a noun axis
+(material / boundary / scope), and the verb picks the default noun.
+- Retrodicts what's already built: the region tool is the material-neutral row (why "rename
+  slice to region tool" felt right); `splitTempo` = boundary(+) on tempo; region eclipse =
+  boundary(−); delete-as-merge (ll.406–432) = boundary(−) in the owner's own words.
+- `replace` is NOT arity (correcting Dev-4's loose claim): it is material(−) then material(+)
+  over one support — a fused compound. `commitFreeOnto` already is exactly this.
+- Compounds explain why split/merge resisted a single row: draw·merge = material(+) ∧
+  boundary(−); draw·split = material(+) ∧ boundary(+). They are DIAGONAL, not values on an axis.
+- Pays rent immediately: region `+` vs `split` (ll.845–851, left unsettled) are the SAME
+  operation — boundary(+) — differing only by an inheritance flag. Region row 4 chips → 2 + a toggle.
+- Does NOT collapse: hold/glide/pen/free is the SHAPE of generated material; band is the
+  gesture's SUPPORT. Neither is a sign. Honest axis count: support · noun · sign · generation.
+- Couplings at degeneracies (mirrored): material(−) can force boundary(−) (the ≥2-point law);
+  boundary(−) across a GAP forces material(+) (merge must invent the connecting segment).
+
+**THE TILING LAW — what it actually is right now (code-checked, three tiers, only two real):**
+1. **Regions tile the clock** — structural, unbreakable (consecutive spans; `regionAtSec`
+   walks them in order). A gap/overlap is not representable.
+2. **Each curve is a function of time** — real, enforced everywhere: `minStep` guards in
+   `ptMove`/`segMove`, monotonicity in `commitFreeOnto`, `≥2` in `removePoints`. Note this is
+   the schema's "cannot hold two values" applied WITHIN one object.
+3. **One note per time per voice — NOT a law.** `autoVoice` is called on creation paths ONLY
+   (`newHoldLen`, `newGlide`, `newFree`, pen). No move path re-runs it. **Measured:** two
+   notes drawn well apart both took voice 3; dragging one onto the other's span gave
+   `15 notes · 3 voices · sel v3` — same voice, overlapping in time, no complaint.
+   ⇒ **RESOLVED in Dev-6 (owner ruling): move MUST break it — that is Roll's rule, not a
+   defect.** Tiling is gesture-local; the measurement above documents INTENDED behaviour.
+   Do NOT re-run `autoVoice` on move paths. See Contract 5.
+
+**draw·split — owner's three readings are NOT equivalent.** They agree at the edge and diverge
+in the interior, because B is a SPAN, not a point: removing an interior window costs TWO
+boundaries, not one ("split point" carries the edge-case assumption). Readings 1&2 (carve,
+keep both remnants) match the in-house precedent — `commitFreeOnto` preserves points outside
+the swept span, and owner already called free-onto "this same idea confined within one note"
+(l.885). Reading 3 (A splits, second piece MOVES to B) discards A's tail = carve+displace+
+truncate; keep it as a separate gesture if wanted, not the primitive.
+**Owner's degenerate intuition ("a boundary that becomes negative") is literally correct** —
+counting A's own boundaries, the arity passes monotonically through zero, and annihilation
+falls out of the ≥2-point well-formedness rule rather than needing to be stipulated.
+⚠ SUPERSEDED IN PART by Dev-6 Contract 3: the framing "the SIGN FLIPS at total coverage" was
+wrong. The ACT's sign never flips (it is always "cut"); only the NET goes negative. Read
+Contract 3, not this paragraph, for the settled statement.
+
+**THE GESTURE LAB — `tabota/gesturelab/index.html` (built 2026-07-29). EPHEMERAL.**
+Owner's ruling: it exists to answer one question, then goes away. **Delete it freely** — it is
+not an artifact, not a deliverable, and deliberately absent from DEPENDENCIES.md. Do not wire
+anything to it and do not maintain it once draw·split is settled.
+Owner's call: prove gesture logic in a scratch file before touching `roll/index.html`.
+Deliberately **NOT a Roll consumer** — zero imports, own CSS, no chart/region/tuning layer,
+nothing for DEPENDENCIES.md to record (the project already carries 4 silently-drifting
+hand-copies of the Roll substrate; this must not become the 5th). Points are ABSOLUTE `{b,p}`,
+not Roll's `t/dur` normalisation — on purpose, so the encoding doesn't obscure the arity.
+Carries a `window.onerror` → on-screen red banner, per today's lesson that the console pipe
+can be silently dead. Rule toggles: tiling, displace-vs-carve, erase-severs, merge-may-invent,
+snap. Live accounting readout + per-gesture ΔE/ΔB log (A's OWN delta logged separately, since
+the scene delta carries B's arrival and would mask the sign passing through zero).
+**CAN decide:** arity accounting, degenerate cases, carve-vs-displace, chip ergonomics.
+**CANNOT decide:** anything chart-dependent — snapping under a tempo curve, px-vs-beat
+containment, region extrapolation (exactly where today's one real bug lived). Green here is
+necessary, not sufficient.
+
+**Lab results — the table SURVIVED falsification.** A's own boundary delta:
+interior **+2** (A→2 pieces) · edge **0** (A→1) · total coverage **−2** (A→0). Variations all
+behave: carve vs displace differ exactly at the interior (2 pieces vs 1); tiling OFF degrades
+to plain draw(+); erase·heal = material(−)/boundary 0; erase·sever = material(−)/boundary(+),
+ΔE +1 ΔB +2; merge refuses across a gap when inventing is off, else ΔB −2 + 1 invented segment.
+**NEW finding the vocabulary alone did not predict:** `erase·sever` has a MINIMUM-MATERIAL
+requirement — severing a 3-point note annihilates it whole (both remnants are single points,
+neither well-formed). So sever can destroy more than it removes. Its degeneracy is reached
+from a different direction than draw·split's (too little material to survive the cut, vs. the
+incumbent fully covered) though both bottom out on the same ≥2-point law.
+
+Status: nothing in `roll/index.html` changed for any of this. Lab is the sandbox; the tier-3
+tiling question is the open blocker before draw·split can be built for real.
+
+---
+
+## Development 6 (2026-07-29) — SETTLED CONTRACTS + ROADMAP
+
+The grammar closed this sitting. Everything below is **settled by owner ruling** unless marked
+OPEN. Dev-3/4/5 remain as the thinking-trail; where they disagree with this section, **this
+section wins** (the two superseded passages are flagged in place).
+
+### Contract 1 — THE NOUN COLLAPSE. One sign, three nouns.
+Polarity is a SINGLE adverb (`+` / `−`) applied to whatever noun the verb targets:
+**MATERIAL** (points) · **BOUNDARY** (partition) · **SCOPE** (selection).
+- **split ≡ boundary(+) · merge ≡ boundary(−).** They were never a second adverb row.
+- `replace` ≡ material(−) then material(+) over one support — a **fused compound, NOT arity**
+  (corrects Dev-4's loose claim). `commitFreeOnto` already is exactly this.
+- Compounds are DIAGONAL, which is why they resisted a single row:
+  draw·split = material(+) ∧ boundary(+) · draw·merge = material(+) ∧ boundary(−).
+- Retrodicts what exists: region tool = the material-neutral row (why "rename slice to region
+  tool" felt right) · `splitTempo` = boundary(+) on tempo · region eclipse = boundary(−) ·
+  delete-as-merge (ll.406–432) = boundary(−), owner's own words, pre-dating the frame.
+- **Does NOT collapse:** `hold/glide/pen/free` is the SHAPE of generated material; `band` is
+  the gesture's SUPPORT. Neither is a sign. Final axis count: **support · noun · sign · generation.**
+- Rent already paid: region `+` vs `split` (Dev-3 ll.845–851, left unsettled) are the SAME
+  operation — boundary(+) — differing only by an inheritance flag. Region row: 4 chips → 2 + a toggle.
+
+### Contract 2 — THE ADVERB IS UNCOUNTED. Geometry supplies the count.
+The act says "cut". It does not say how many times. B's own geometry does, because **a stroke
+has two endpoints** (owner's mechanism, which predicts rather than enumerates):
+
+> **pieces of A = how many of B's TWO endpoints land STRICTLY INSIDE A.**
+> Closed form covering the miss case: **pieces = connected components of span(A) ∖ span(B).**
+
+Strictness matters: coincident endpoints count as OUTSIDE. Verified **9/9** configurations in
+the lab — interior (2) · crosses left edge (1) · crosses right edge (1) · covers all (0) ·
+exactly A's span (0) · flush-start/ends-inside (1) · starts-inside/flush-end (1) · entirely
+left (1, untouched) · entirely right (1, untouched).
+**⇒ draw·split is ONE TOGGLE, never a row with values. The count is never chosen.**
+
+### Contract 3 — ACT vs NET. (owner's correction; supersedes "the sign flips")
+The **act's** sign is chosen and never changes meaning — the chip always says *cut*. The
+**net** is computed and may come out with the opposite sign. They are different quantities.
+- act `+boundary` → net can be **negative** (annihilation: nothing survives well-formed).
+- act `−boundary` → can force **material(+)** (merge across a gap must invent the connecting
+  segment — unrequested material, going the other way).
+- **Act and net diverge EXACTLY where the ≥2-point well-formedness law bites, and nowhere else.**
+- **Corollary (closes owner's own earlier aside):** the divergence is an **EDITOR** artifact,
+  not a **FORMAT** one. Relax `≥2` at the format level and act ≡ net always. A degenerate
+  object is representable in `.tabota` and merely undrawable in Roll — the same
+  notation-vs-realizer seam as the master-file field note.
+- UI consequence: **no mode ever needs to say "now it's minus."** One uncounted sign; geometry
+  supplies the count; well-formedness supplies the net.
+
+### Contract 4 — CARVE, NOT DISPLACE.
+draw·split keeps **BOTH** remnants; A's tail beyond B survives. Matches the in-house precedent
+(`commitFreeOnto` preserves points outside the swept span — owner: free-onto is "this same idea
+confined within one note", l.885). Reading 3 (A splits, second piece MOVES to B) is
+carve+displace+truncate — a DIFFERENT gesture, not the primitive; build separately or not at all.
+
+### Contract 5 — TILING IS GESTURE-LOCAL. MOVE MUST BREAK IT.
+**Owner ruling: "Move has to break it. That's the rule of roll. But it's a second gesture anyway."**
+Bijectivity (one pitch per time per voice) is a guarantee about **a gesture's OUTPUT**, never a
+standing document invariant. A later gesture may violate it exactly as it may do anything else;
+no global claim was ever made, so there is no contradiction.
+- ⇒ **Do NOT re-run `autoVoice` on move paths.** Current behaviour is CORRECT. Dev-5's
+  measurement (two notes sharing voice 3 and overlapping after a drag) documents INTENDED
+  behaviour, not a bug. Re-running it would also drift MIDI channel identity silently.
+- ⇒ Tier 1 (regions tile the clock) and Tier 2 (each curve is a function of time) stay REAL
+  invariants. Tier 3 is a **mode**, and "tiling ON" was always the right name for it.
+- **Unblocks draw·split.**
+
+### Lab findings worth keeping after the lab is gone
+- The accounting table survived falsification (A's own boundary delta: interior **+2** · edge
+  **0** · total coverage **−2**).
+- Variations behave: carve vs displace differ ONLY at the interior · tiling OFF degrades to
+  plain draw(+) · erase·heal = material(−)/boundary 0 · erase·sever = material(−)/boundary(+),
+  ΔE +1 ΔB +2 · merge refuses across a gap when inventing is off, else ΔB −2 + 1 invented segment.
+- **`erase·sever` has a MINIMUM-MATERIAL requirement** (found by the lab, not predicted by the
+  vocabulary): severing a 3-point note annihilates it whole — both remnants are single points,
+  neither well-formed. **Sever can destroy more than it removes.** Its degeneracy is reached
+  from the opposite direction to draw·split's (too little material to survive the cut, vs. the
+  incumbent fully covered), though both bottom out on the same ≥2-point law.
+- **Method (keep this one):** Roll's script block is wrapped in
+  `if(typeof document!=='undefined')(function(){…})()`, so NOTHING is global and `typeof`
+  probes are meaningless. `read_console_messages` was proven **silently dead** by a canary.
+  The only reliable smoke test is injecting a page-scope
+  `window.addEventListener('error', …)` that writes into a `data-` attribute, then reading it.
+  A missing function is parse-clean and node-suite-clean; it will look exactly like a working
+  feature until you do this.
+
+### ROADMAP (next build order)
+1. **Chip-row budget pass** — now tractable, because Contract 1 deletes rows rather than adding
+   them. Carries two riders: (a) the OPEN `polarity` vs `selMode` fork — the collapse now
+   ARGUES FOR option (b): keep ONE sign row, let the verb imply the noun (select's noun is
+   scope, draw's is material), and rehome `replace` as the compound it is; **still owner's
+   call, not settled**; (b) the live bug: `replace` is unreachable in `move·auto` (l.1972,
+   `||polarity==='+'` forces `include`) — fix inside this pass, since the semantics change.
+2. **draw·split** — unblocked. Carve; one toggle; count from geometry; annihilation falls out
+   of `≥2`. No new law needed.
+3. **erase·sever** (the empty cell) — optional; note the minimum-material degeneracy above.
+4. **Region tool + contextual frame inspector** (Dev-3/4: properties surface on flag-select).
+   Region row is now 2 chips + inheritance toggle.
+5. **MIDI settings consolidated into the bend report** (Dev-4).
+6. **Delete `tabota/gesturelab/`** once draw·split lands. It is ephemeral by ruling.
+
+**Still OPEN (nothing else is):** the `polarity`/`selMode` fork; whether `erase·sever` is wanted
+at all; `+sel` vs `target` naming (Dev-4, deferred).
+
+---
+
+## Session close (2026-07-29)
+
+Thread closing here; local server on :8131 stopped. State of the working tree as of close,
+for whoever (human or LLM) opens this file next:
+
+- **`roll/index.html`** carries THREE landed, browser-proven builds this thread: the type-kill
+  refactor, the verb re-cut, and band axis-lock (Cut 2 Stages 1–3) — all committed to no branch
+  yet, still working-tree changes. Also carries the erase-grammar fix (Dev-5 audit: two
+  functions were called but never defined; the whole `draw(−)` path threw on every gesture).
+  **None of this is committed to git.** `git status` shows it modified, uncommitted.
+- **`tabota/gesturelab/index.html`** is new, untracked, and **EPHEMERAL by owner ruling** —
+  see Contract-adjacent note under Development 6. Delete it once draw·split lands in Roll
+  proper; it owes nothing to DEPENDENCIES.md and should stay that way.
+- **This file** was renamed from `tabota_handover_20260627.md` → `tabota_roll_roadmap.md` via
+  `git mv` (history preserved) and reframed as a living doc rather than a dated handover.
+- Nothing here was committed as part of this rename/note-writing pass — same "only commit when
+  asked" rule as the rest of the session.
+
+**To resume:** read Development 6 (§ "SETTLED CONTRACTS + ROADMAP") for the grammar as it
+stands, then the ROADMAP list immediately above this note for build order. First actionable
+item is the chip-row budget pass, which carries the `move·auto` `replace` bug fix as a rider.
+The five contracts (noun collapse, uncounted adverb, act-vs-net, carve-not-displace, tiling-is-
+gesture-local) are settled and should not be re-derived from scratch — cite them.

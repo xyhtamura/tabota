@@ -119,7 +119,7 @@ input[type=number].w48{width:48px}
 .stage.tool-select #roll{cursor:default}
 .stage.tool-move #roll{cursor:default}
 .stage.tool-draw #roll{cursor:crosshair}
-.stage.tool-erase #roll{cursor:not-allowed}
+.stage.tool-erase #roll,.stage.pol-minus #roll,.stage.pol-minus.tool-draw #roll{cursor:not-allowed}
 .stage.tool-pan #roll{cursor:grab}
 .seg.dim{opacity:.35; pointer-events:none}   /* selMode chips are select's — they grey out under other verbs */
 #targetPill.new{color:var(--tide); font-weight:600}
@@ -148,6 +148,11 @@ footer code{font-family:var(--mono); color:var(--ink)}
   header{ padding:8px 12px 7px; }
   header .sub{ display:none; }
   footer{ padding:8px 12px 14px; }
+  /* the export sheet stacks: label over control over gloss, so the note keeps its measure */
+  .modal{ padding:10px; align-items:flex-start; }
+  .modal .sheet{ margin-top:6vh; }
+  .modal .row{ grid-template-columns:74px 1fr; }
+  .modal .row .note{ grid-column:1 / 3; padding-left:2px }
 }
 
 /* drawer (report / io detail) */
@@ -165,6 +170,32 @@ footer code{font-family:var(--mono); color:var(--ink)}
 .drawer th,.drawer td{text-align:right; padding:3px 5px; border-bottom:1px solid var(--edge)}
 .drawer th{color:var(--ink-dim); position:sticky; top:0; background:var(--panel); font-weight:500}
 .drawer td.l,.drawer th.l{text-align:left}
+/* modal sheet (export settings) — one place for the .mid translation knobs, so the
+   toolbars stay authoring-only */
+.modal{
+  position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
+  background:#2a1a3a2e; backdrop-filter:blur(2px); padding:18px;
+}
+.modal[hidden]{display:none}
+.modal .sheet{
+  position:relative; width:min(560px,100%); max-height:86vh; overflow:auto;
+  background:linear-gradient(180deg,#fbf9fd,var(--panel));
+  border:1px solid var(--edge); border-radius:12px; padding:16px 18px 14px;
+  box-shadow:0 24px 60px -30px #2a1a3a99;
+}
+.modal h3{font-family:var(--display); font-weight:600; margin:0 0 4px; font-size:16px}
+.modal .close{position:absolute; top:10px; right:12px; cursor:pointer; color:var(--ink-dim); background:none; border:none; font-size:16px}
+.modal .lede{margin:0 0 12px; font-size:11px; line-height:1.55; color:var(--ink-dim)}
+.modal .lede em{color:var(--tide); font-style:normal}
+.modal .row{display:grid; grid-template-columns:74px auto 1fr; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--edge)}
+.modal .row > label:first-child{color:var(--ink-dim); font-size:11px; text-align:right}
+.modal .row .u{font-size:11px; color:var(--ink-faint); margin-left:-3px}
+.modal .row .note{font-size:10.5px; color:var(--ink-faint); line-height:1.45}
+.modal .row .wide{grid-column:2 / 4}
+.modal .sheet-foot{display:flex; align-items:center; gap:8px; margin-top:14px; padding-top:11px; border-top:1px solid var(--edge)}
+.modal .sheet-foot .spacer{flex:1}
+.btn.primary{background:var(--tide); border-color:var(--tide); color:#eefaf7; font-weight:600}
+.btn.primary:hover{background:#0e7a70; border-color:#0e7a70; color:#fff}
 .bendbar{display:inline-block; height:7px; background:var(--tide); border-radius:2px; vertical-align:middle}
 .flag{color:var(--ember); font-weight:600}
 .summary{background:#fff8; border:1px solid var(--edge-2); border-radius:8px; padding:9px 11px; margin:10px 0; line-height:1.5}
@@ -309,7 +340,7 @@ select:disabled{
   <div class="brand">Tabota <em>Roll</em></div>
   <div class="sub">polytemporal multi-tuning graphical score editor</div>
   <div class="spacer"></div>
-  <div class="pill" title="MIDI translation only — how far one channel's pitch-bend may reach. Tabota's curves and slides are unconstrained; this sets what the .mid shadow can carry before hard-walling.">bend ± <input type="number" id="bendRange" value="2" min="1" max="48" step="1"> st</div>
+  <div class="pill" id="bendPill" title="MIDI translation only — how far one channel's pitch-bend may reach. Set it in the export dialog (⬆ export MIDI).">bend ± <span id="bendPillVal">2</span> st</div>
   <div class="pill" id="pillRegime">meter · scale</div>
 </header>
 
@@ -318,9 +349,15 @@ select:disabled{
     <button data-tool="select" title="Select — binds the SCOPE the other verbs act on. Click a point / a curve / marquee; never moves anything (V)">▣ select</button>
     <button data-tool="move" title="Move — translate the selection (points, endpoints, whole notes). End-handle of a whole-selected note = time-only resize (M)">✥ move</button>
     <button data-tool="draw" class="on" title="Draw — deposit points. Empty selection → a NEW note; selection present → deposits INTO it, never a new note (D)">✎ draw</button>
-    <button data-tool="erase" title="Erase (E)">⌫ erase</button>
     <button data-tool="slice" title="Slice — click to cut at that spot; the band picks the axis: time, pitch, or region (= both). Box doesn't slice. (S)">⌿ slice</button>
     <button data-tool="pan" title="Pan (space-drag)">✋ pan</button>
+  </div>
+  <div class="group">
+    <label>polarity</label>
+    <div class="seg" id="polSeg">
+      <button data-pol="+" class="on" title="Deposit / Include (+)">＋</button>
+      <button data-pol="-" title="Take away / Erase (-)">−</button>
+    </div>
   </div>
   <div class="group">
     <label>draw</label>
@@ -340,10 +377,11 @@ select:disabled{
     </div>
     <button id="deselBtn" title="Deselect all — empties the scope, so draw makes NEW notes again (Esc)">⊘</button>
     <button id="selAllBtn" title="Select every note (Ctrl-A)">⊞</button>
+    <button id="delBtn" title="Delete selection (Del / Backspace)">🗑</button>
   </div>
   <div class="group">
     <div class="pill" id="targetPill" title="What the next gesture will affect">draw → NEW</div>
-    <button id="autoSelBtn" title="Auto-select — cursor proximity picks the target instead of the selection (Photoshop-style). Trades safety for convenience">◎ auto</button>
+    <button id="autoSelBtn" title="Auto-select (+sel) — cursor proximity picks the target instead of the selection (Photoshop-style). Trades safety for convenience">◎ +sel</button>
   </div>
 
   <div class="group">
@@ -454,12 +492,7 @@ select:disabled{
 
 <div class="toolbar" style="border-top:none">
   <div class="group">
-    <label title="voice 1 uses this channel, voice 2 the next, etc.">base ch</label><input type="number" id="channel" class="w48" value="1" min="1" max="16">
-    <label>prog</label><input type="number" id="program" class="w48" value="0" min="0" max="127">
-    <label>vel</label><input type="number" id="vel" class="w48" value="96" min="1" max="127">
-    <label>PPQ</label><input type="number" id="ppq" value="480" min="24" max="1920" step="24">
-  </div>
-  <div class="group">
+    <label title="velocity new notes are drawn with">vel</label><input type="number" id="vel" class="w48" value="96" min="1" max="127">
     <label>default len</label><select id="defLen">
       <option value="0.25">1/16</option><option value="0.5">1/8</option>
       <option value="1" selected>1/4</option><option value="2">1/2</option><option value="4">1/1</option>
@@ -496,6 +529,64 @@ select:disabled{
   </div>
 </div>
 
+<!-- MIDI export settings — the .mid translation knobs live here, not in the toolbars -->
+<div class="modal" id="midiDlg" hidden>
+  <div class="sheet">
+    <button class="close" id="midiDlgClose" title="close (Esc)">✕</button>
+    <h3>Export MIDI</h3>
+    <p class="lede">The .mid is a <em>shadow</em> of the score: one channel per voice, each carrying its own pitch-bend stream. Tabota's curves and tunings are unconstrained — these settings decide only what the shadow can carry.</p>
+
+    <div class="row">
+      <label for="bendRange">bend ±</label>
+      <span><input type="number" id="bendRange" class="w48" value="2" min="1" max="96" step="1"><span class="u"> st</span></span>
+      <span class="note">how far one channel's bend may reach before hard-walling. Must match the receiving instrument's own bend range — Kontakt generally ignores the RPN this writes.</span>
+    </div>
+
+    <div class="row">
+      <label for="channel">base ch</label>
+      <input type="number" id="channel" class="w48" value="1" min="1" max="16">
+      <span class="note">voice 1 takes this channel, voice 2 the next, wrapping at 16.</span>
+    </div>
+
+    <div class="row">
+      <label></label>
+      <label class="chk"><input type="checkbox" id="skipDrumCh"> keep ch 10 free</label>
+      <span class="note">leave the GM percussion channel out of the rotation.</span>
+    </div>
+
+    <div class="row">
+      <label></label>
+      <label class="chk"><input type="checkbox" id="trackPerVoice"> one track per voice</label>
+      <span class="note">writes format 1 with a conductor track. Off = format 0: one track, all channels — Reaper splits that by channel, most hosts don't.</span>
+    </div>
+
+    <div class="row">
+      <label for="bendSteps">bend pts</label>
+      <span><input type="number" id="bendSteps" class="w48" value="24" min="1" max="200" step="1"><span class="u"> /beat</span></span>
+      <span class="note">contour sampling rate; in free time a beat is one second. Repeated 14-bit values are dropped, so a slow drift costs almost nothing.</span>
+    </div>
+
+    <div class="row">
+      <label for="ppq">PPQ</label>
+      <input type="number" id="ppq" value="480" min="24" max="1920" step="24">
+      <span class="note">ticks per quarter — the file's time resolution.</span>
+    </div>
+
+    <div class="row">
+      <label for="program">prog</label>
+      <input type="number" id="program" class="w48" value="0" min="0" max="127">
+      <span class="note">program-change sent on every voice channel.</span>
+    </div>
+
+    <div class="sheet-foot">
+      <span class="note" id="midiDlgStat"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="midiDlgReport">bend report</button>
+      <button class="btn primary" id="midiDlgGo">⬆ export .mid</button>
+    </div>
+  </div>
+</div>
+
 <footer>
   <div class="transport">
     <button class="btn play" id="play" title="Play / pause (space) — pause keeps the playhead where it stands">▶ play</button>
@@ -513,8 +604,7 @@ select:disabled{
   <div class="group" style="gap:6px">
     <button class="btn" id="impMidi">⬇ import MIDI</button>
     <input type="file" id="impFile" accept=".mid,.midi" style="display:none">
-    <button class="btn" id="expMidi">⬆ export MIDI</button>
-    <button class="btn" id="report">bend report</button>
+    <button class="btn" id="expMidi" title="open the MIDI export settings">⬆ export MIDI</button>
     <button class="btn" id="impJson">⬇ import Tabota</button>
     <input type="file" id="impJsonFile" accept=".json,application/json" style="display:none">
     <button class="btn" id="expJson">⬆ export Tabota</button>
@@ -555,9 +645,14 @@ function bendForTargetMidi(targetMidi,baseNote,range){
   const clamped=Math.max(0,Math.min(16383,pb));
   return {pb14:clamped,deltaSemis,overflow:pb!==clamped};
 }
+/* SMF writer. One writer may hold several tracks: `track(i)` selects which one
+   subsequent calls land on (0 by default, so single-track callers are unchanged).
+   build() emits format 0 when only track 0 was used, format 1 otherwise — with
+   track 0 as the conductor (tempo / time-signature) per the format-1 convention. */
 class MidiWriter{
-  constructor(ppq=480){ this.ppq=ppq; this.events=[]; this._seq=0; }
-  _push(tick,bytes,order=0){ this.events.push({tick:Math.round(tick),order,seq:this._seq++,bytes}); }
+  constructor(ppq=480){ this.ppq=ppq; this.events=[]; this._seq=0; this._cur=0; }
+  track(i){ this._cur=Math.max(0,i|0); return this; }
+  _push(tick,bytes,order=0){ this.events.push({trk:this._cur,tick:Math.round(tick),order,seq:this._seq++,bytes}); }
   tempo(tick,bpm){ const m=Math.round(60000000/bpm); this._push(tick,[0xFF,0x51,0x03,(m>>16)&255,(m>>8)&255,m&255],-100); }
   timeSignature(tick,num,den){ this._push(tick,[0xFF,0x58,0x04,num,Math.round(Math.log2(den)),24,8],-99); }
   trackName(tick,name){ const b=[].slice.call(new TextEncoder().encode(name)); this._push(tick,[0xFF,0x03,b.length,...b],-98); }
@@ -572,16 +667,22 @@ class MidiWriter{
   noteOn(tick,ch,note,vel=100){ this._push(tick,[0x90|(ch&15),note&127,vel&127],0); }
   noteOff(tick,ch,note){ this._push(tick,[0x80|(ch&15),note&127,0],-5); }
   _vlq(value){ let buf=value&127; const out=[]; while(value>>=7){ buf<<=8; buf|=((value&127)|128); } while(true){ out.push(buf&255); if(buf&128) buf>>=8; else break; } return out; }
-  build(){
-    this.events.sort((a,b)=>a.tick-b.tick||a.order-b.order||a.seq-b.seq);
+  _chunk(evs){
+    evs.sort((a,b)=>a.tick-b.tick||a.order-b.order||a.seq-b.seq);
     const trk=[]; let last=0;
-    for(const e of this.events){ trk.push(...this._vlq(e.tick-last),...e.bytes); last=e.tick; }
+    for(const e of evs){ trk.push(...this._vlq(e.tick-last),...e.bytes); last=e.tick; }
     trk.push(0x00,0xFF,0x2F,0x00);
-    const ppq=this.ppq;
-    const head=[0x4D,0x54,0x68,0x64,0,0,0,6,0,0,0,1,(ppq>>8)&255,ppq&255];
     const len=trk.length;
-    const th=[0x4D,0x54,0x72,0x6B,(len>>24)&255,(len>>16)&255,(len>>8)&255,len&255];
-    return new Uint8Array([...head,...th,...trk]);
+    return [0x4D,0x54,0x72,0x6B,(len>>24)&255,(len>>16)&255,(len>>8)&255,len&255,...trk];
+  }
+  build(){
+    const idxs=[...new Set(this.events.map(e=>e.trk))].sort((a,b)=>a-b);
+    if(!idxs.length) idxs.push(0);
+    const fmt=idxs.length>1?1:0, n=idxs.length, ppq=this.ppq;
+    const head=[0x4D,0x54,0x68,0x64,0,0,0,6,0,fmt,(n>>8)&255,n&255,(ppq>>8)&255,ppq&255];
+    const body=[];
+    for(const i of idxs) body.push(...this._chunk(this.events.filter(e=>e.trk===i)));
+    return new Uint8Array([...head,...body]);
   }
 }
 
@@ -633,6 +734,7 @@ function noteMinMaxHz(note){
    Bends beyond the user's range hard-wall (clamp) — a translation formality. */
 function buildMidi(notes, opts){
   const {ppq=480,bpm=120,sigNum=4,sigDen=4,a4=440,range=2,baseChannel=0,program=0,vel=96,bendSteps=24,
+         trackPerVoice=false,skipDrumChannel=false,
          timeline=null,qAtSec=null,secAtQ=null}=opts;
   // seconds <-> quarters: piecewise through the region timeline when given, single-tempo otherwise
   const s2q = qAtSec || (s=>s*bpm/60);
@@ -650,10 +752,16 @@ function buildMidi(notes, opts){
   const byVoice=new Map();
   for(const n of notes){ const v=n.voice||1; if(!byVoice.has(v)) byVoice.set(v,[]); byVoice.get(v).push(n); }
   const voices=[...byVoice.keys()].sort((a,b)=>a-b);
-  const report=[]; const warnings=[]; const channelsUsed=[];
+  // channel order: base, base+1, … wrapping at 16. With skipDrumChannel the GM
+  // percussion channel (10, index 9) is left out of the rotation entirely.
+  const chanList=[];
+  for(let k=0;k<16;k++){ const c=(baseChannel+k)%16; if(skipDrumChannel && c===9) continue; chanList.push(c); }
+  const report=[]; const warnings=[]; const channelsUsed=[]; let bendMsgs=0, bendPts=0;
   voices.forEach((v,vi)=>{
-    const ch=(baseChannel+vi)%16;
+    const ch=chanList[vi%chanList.length];
     channelsUsed.push({voice:v,ch:ch+1});
+    // format 1: track 0 stays the conductor, each voice gets its own named track
+    if(trackPerVoice){ w.track(vi+1); w.trackName(0,'voice '+v); }
     w.programChange(0,ch,program);
     w.setBendRange(0,ch,range,0);
     const ns=byVoice.get(v).slice().sort((a,b)=>a.start-b.start);
@@ -687,9 +795,16 @@ function buildMidi(notes, opts){
         bends.push({tick:s2q(sec)*ppq, pb14:cl});
         if(n.pts.length<=1) break;
       }
-      w.pitchBend(startTick,ch,bends[0].pb14);
+      // the onset bend is always written (it pegs the key); interior samples are written
+      // only where the 14-bit value actually moves. A slow drift asks for the same pb14
+      // many times in a row — dropping the repeats is lossless and cuts the file 10-50x.
+      let lastPb=bends[0].pb14, wrote=1;
+      w.pitchBend(startTick,ch,lastPb);
       w.noteOn(startTick,ch,base,n.vel||vel);
-      for(let s=1;s<bends.length;s++) w.pitchBend(bends[s].tick,ch,bends[s].pb14);
+      for(let s=1;s<bends.length;s++){ const p=bends[s].pb14;
+        if(p===lastPb) continue;
+        w.pitchBend(bends[s].tick,ch,p); lastPb=p; wrote++; }
+      bendMsgs+=wrote; bendPts+=bends.length;
       w.noteOff(endTick,ch,base);
       const overflow = maxAbsDelta>range+1e-9;
       if(overflow) warnings.push(`voice ${v} note @${startBeat.toFixed(2)} reaches ±${maxAbsDelta.toFixed(2)}st — hard-walled at ±${range}st`);
@@ -698,13 +813,14 @@ function buildMidi(notes, opts){
         type:(n.pts.length>2?'curve':(Math.abs(1200*Math.log2(n.pts[n.pts.length-1].hz/n.pts[0].hz))<0.5?'flat':'line')),
         startHz, base, baseName:midiToName(base),
         cents:(freqToMidi(startHz,a4)-base)*100,
-        pb0:bends[0].pb14, span:maxAbsDelta, overflow, clipped
+        pb0:bends[0].pb14, span:maxAbsDelta, overflow, clipped, bendMsgs:wrote, bendPts:bends.length
       });
     }
   });
-  if(voices.length>16) warnings.push(`${voices.length} voices exceed 16 MIDI channels — higher voices wrap and will share a channel`);
+  if(voices.length>chanList.length) warnings.push(`${voices.length} voices exceed ${chanList.length} available MIDI channel${chanList.length!==1?'s':''} — higher voices wrap and will share a channel`);
   report.sort((a,b)=>a.start-b.start||a.voice-b.voice);
-  return {bytes:w.build(), report, warnings, count:notes.length, voices:voices.length, channelsUsed};
+  return {bytes:w.build(), report, warnings, count:notes.length, voices:voices.length, channelsUsed,
+          bendMsgs, bendPts, tracks:trackPerVoice?voices.length+1:1};
 }
 
 /* ---------- MIDI import (uses @tonejs/midi) ----------
@@ -777,6 +893,7 @@ const view={
 };
 let drawMode='hold';                 // draw's arity: 'hold' | 'glide' | 'pen' | 'free' — explicit chips, mobile-first
 let autoSelect=false;                // OFF (careful, default): selection is authoritative. ON: cursor proximity picks the target
+let polarity='+';                    // '+' (deposit / include) | '-' (take away / erase)
 const settings={
   get bpm(){return +bpm.value||120;}, get sigNum(){return +sigNum.value||4;},
   get sigDen(){return +sigDen.value||4;}, get a4(){return +a4.value||440;},
@@ -1222,7 +1339,8 @@ const bpm=document.getElementById('bpm'), sigNum=document.getElementById('sigNum
  sigSpan=document.getElementById('sigSpan'), sigGhost=document.getElementById('sigGhost'),
  bendRange=document.getElementById('bendRange'), channel=document.getElementById('channel'),
  program=document.getElementById('program'), vel=document.getElementById('vel'),
- ppq=document.getElementById('ppq'), grid=document.getElementById('grid'),
+ ppq=document.getElementById('ppq'), bendSteps=document.getElementById('bendSteps'),
+ grid=document.getElementById('grid'),
  defLen=document.getElementById('defLen'), bars=document.getElementById('bars'),
  snapTime=document.getElementById('snapTime'), snapPitch=document.getElementById('snapPitch'),
  status=document.getElementById('status');
@@ -1905,7 +2023,8 @@ cv.addEventListener('pointerdown',e=>{
     const snappedSec=beatToSecIn(snappedBeat, activeRegion());
     if(selBand==='x'||selBand==='xy'){ splitRegionAt(r, snappedBeat); }
     if(selBand==='y'||selBand==='xy'){ splitPitchAt(snappedSec); }
-    return; }
+    changed();
+  }
 
   // PEN (new-note session): click to place successive points (double-click / Enter / Esc to finish)
   function penTapNew(){
@@ -1931,7 +2050,7 @@ cv.addEventListener('pointerdown',e=>{
   }
 
   const hit=noteAt(p.x,p.y);
-  if(t==='erase'){ if(hit){ pushHistory(); notes=notes.filter(n=>n!==hit); selection.delete(hit.id); changed(); } return; }
+  if(t==='erase'){ setTool('draw'); setPolarity('-'); }
 
   // ▣ SELECT — the scope-binder. Binds points / segments / whole notes; NEVER moves anything.
   // (Selection is SCOPE, tools are VERBS — Dev-2 contract. The set-op chips live here and only here.)
@@ -1960,16 +2079,26 @@ cv.addEventListener('pointerdown',e=>{
     dragHist=histSnapshot();
     const h=selectHit(p.x,p.y);
     if(autoSelect){                                       // ON: cursor proximity is authoritative; it rebinds the scope to what it grabs
-      if(!h) return;
-      segSel=null; tempoSel.clear(); selection.clear(); ptSel=new Map(); pointSel=null;
-      if(h.kind==='point'){
-        mergeSel(h.note, new Set([h.idx]), 'add'); pointSel={note:h.note, idx:h.idx};
-        drag={mode:'resize', freezePitch:false, note:h.note, ptIdx:h.idx, ep:null, sx:p.x, sy:p.y, o:snapshot(h.note)};
-      } else { selection.add(h.note.id); drag=startGroupMove(p); }
+      const mode = polarity==='-' ? 'exclude' : (selMode==='include'||polarity==='+'?'include':'replace');
+      if(h && mode!=='exclude'){
+        segSel=null; tempoSel.clear();
+        if(mode==='replace'){ selection.clear(); ptSel=new Map(); pointSel=null; }
+        if(h.kind==='point'){
+          mergeSel(h.note, new Set([h.idx]), 'add'); pointSel={note:h.note, idx:h.idx};
+          drag={mode:'resize', freezePitch:false, note:h.note, ptIdx:h.idx, ep:null, sx:p.x, sy:p.y, o:snapshot(h.note)};
+        } else {
+          if(!selection.has(h.note.id)) selection.add(h.note.id);
+          drag=startGroupMove(p);
+        }
+        changed(); return;
+      }
+      const marqMode = (polarity==='-'||mode==='exclude') ? 'subtract' : (mode==='include' ? 'add' : 'replace');
+      if(marqMode==='replace'){ clearGran(); tempoSel.clear(); }
+      drag={mode:'marquee',sx:p.x,sy:p.y,x2:p.x,y2:p.y,marqMode,band:selBand,whole:true};
       changed(); return;
     }
     const selPresent = selection.size>0 || ptSel.size>0;
-    if(!selPresent){ flash('nothing selected — bind a scope with ▣ (or turn ◎ auto on)'); return; }
+    if(!selPresent){ flash('nothing selected — bind a scope with ▣ (or turn ◎ +sel on)'); return; }
     if(h && h.kind==='point' && selection.has(h.note.id) && (h.idx===0 || h.idx===h.note.pts.length-1)){
       // end-handle of a WHOLE-selected note → time-only resize (Stage-1 frozen-pitch, now scope-derived)
       drag={mode:'resize', freezePitch:true, note:h.note, ptIdx:h.idx, ep:null, sx:p.x, sy:p.y, o:snapshot(h.note)};
@@ -1982,6 +2111,23 @@ cv.addEventListener('pointerdown',e=>{
   // ✎ DRAW — deposit, scoped by selection. HARD LAW (auto OFF): selection present ⇒ deposit
   // INTO it, never a new note; deposits land only within the target's [start,end] extent.
   if(t==='draw'){
+    if(polarity==='-'){
+      dragHist=histSnapshot();
+      // the pool is captured ONCE, at drag start: an erase prunes ptSel, so re-deriving it
+      // mid-sweep would let the brush eat its own scope and stall after the first point.
+      const pool=erasePool();
+      if(drawMode==='free'){
+        drag={mode:'freeErase', sx:p.x, sy:p.y, pool};
+        erasePointsNear(p, pool);
+        changed(); return;
+      }
+      const h=selectHit(p.x,p.y);
+      if(h && h.kind==='point' && (!pool || pool.has(h.note.id))){
+        eraseFrom(new Map([[h.note, new Set([h.idx])]]));      // single tap → that point
+      }
+      drag={mode:'marqueeErase', sx:p.x, sy:p.y, x2:p.x, y2:p.y, band:selBand, pool};
+      changed(); return;
+    }
     if(drawMode==='pen' && penNote){ penTapNew(); return; }        // live pen session keeps its taps
     let target=null;
     if(autoSelect){
@@ -2275,6 +2421,8 @@ cv.addEventListener('pointermove',e=>{
     }
     draw(); updateStatus(); return;
   }
+  if(d.mode==='freeErase'){ erasePointsNear(p, d.pool); draw(); updateStatus(); return; }
+  if(d.mode==='marqueeErase'){ d.x2=p.x; d.y2=p.y; draw(); drawMarquee(d); return; }
   if(d.mode==='marquee'){ d.x2=p.x; d.y2=p.y; draw(); drawMarquee(d); return; }
 });
 // pen rubber-band preview (no drag in progress)
@@ -2315,7 +2463,7 @@ function hoverFeedback(p){
     return;
   }
   if(view.tool==='draw'){
-    cv.style.cursor='crosshair';
+    cv.style.cursor=polarity==='-'?'not-allowed':'crosshair';
     if(autoSelect) updateTargetPill(p);                                   // pill reads the hover target live in auto mode
     return;
   }
@@ -2324,6 +2472,7 @@ function hoverFeedback(p){
 cv.addEventListener('pointerup',e=>{
   if(drag){
     if(drag.mode==='marquee'){ commitMarquee(drag); }
+    if(drag.mode==='marqueeErase'){ commitMarqueeErase(drag); }
     if(drag.mode==='boundary'){ pushHistory();
       if(drag.snap==='end'){ resizeLastRegion(drag.preview); flash('piece end moved'); }
       else { const before=regions.length; moveBoundary(drag.i, drag.preview);
@@ -2334,7 +2483,7 @@ cv.addEventListener('pointerup',e=>{
       flash('tuning boundary moved'); }
     if(drag.mode==='playhead') endScrub();
     if(drag.mode==='freeOnto'){ commitFreeOnto(drag); }   // replace the swept span (tentative → committed)
-    if(!['marquee','boundary','pitchBoundary','pan','scrollGutter','playhead'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
+    if(!['marquee','marqueeErase','freeErase','boundary','pitchBoundary','pan','scrollGutter','playhead'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
     if((drag.mode==='newGlide'||drag.mode==='newFree'||drag.mode==='newHoldLen')){
       // discard a deposit that never grew past a single point
       if(drag.note.pts.length<2){ notes=notes.filter(n=>n!==drag.note); }
@@ -2407,6 +2556,57 @@ function commitMarquee(d){
   } finally { _ctxRegion=null; }
 }
 
+/* ---- draw(−) ERASURE — the take-away polarity. Mirror of draw(+)'s scope law:
+   +sel OFF → only the bound scope may be eaten (the hard law, in reverse: erase never
+   reaches outside the selection); +sel ON → the cursor is authoritative and eats whatever
+   it touches. Point positions are tested in RENDERED px under each note's own chart
+   (sibling of THE GRID LAW) so what you erase is what you see. The ≥2-point law lives in
+   removePoints: a note that would fall below two points is removed whole. ---- */
+function erasePool(){                    // null = unscoped (auto ON); else the eligible note ids
+  if(autoSelect) return null;
+  const ids=new Set(selection);
+  for(const n of ptSel.keys()) ids.add(typeof n==='object'?n.id:n);
+  return ids;
+}
+function eraseFrom(hits){                // hits: Map(note -> Set(pointIdx))
+  let did=false;
+  for(const [n,idx] of hits){ if(!idx.size) continue;
+    ptSel.delete(n);                     // granular indices go stale the instant points shift
+    if(!removePoints(n,idx)){ notes=notes.filter(x=>x!==n); selection.delete(n.id); }
+    did=true;
+  }
+  // NOTE: the whole-note scope (selection ids) SURVIVES an erase — a sweep must keep eating
+  // across its whole path, and the scope is what the next verb reads. changed() prunes the rest.
+  if(did){ segSel=null; changed(); }
+  return did;
+}
+function eraseHitsIn(test, pool){        // collect points passing test(px,py), honouring the pool
+  const hits=new Map();
+  try{
+    for(const n of notes){ if(pool && !pool.has(n.id)) continue;
+      _ctxRegion=regionById(n.region);
+      for(let i=0;i<n.pts.length;i++){
+        const x=beatToX(n.start+n.pts[i].t*n.dur), y=hzToY(n.pts[i].hz);
+        if(test(x,y)){ if(!hits.has(n)) hits.set(n,new Set()); hits.get(n).add(i); }
+      }
+    }
+  } finally { _ctxRegion=null; }
+  return hits;
+}
+const ERASE_R=10;                        // free(−) brush radius, px — a shade wider than the 8px point hit
+function erasePointsNear(p, pool){       // free(−): eat points under the swept cursor
+  if(pool===undefined) pool=erasePool();
+  return eraseFrom(eraseHitsIn((x,y)=>Math.hypot(p.x-x,p.y-y)<=ERASE_R, pool));
+}
+function commitMarqueeErase(d){          // draw(−) marquee: eat every point inside the box
+  const {x,y,w,h}=marqueeRect(d,false);
+  const band=d.band||'box', sweptW=Math.abs(d.x2-d.sx), sweptH=Math.abs(d.y2-d.sy);
+  if(band==='box' && sweptW<3 && sweptH<3) return;   // a bare tap is the point-erase gesture, not a marquee
+  if(band==='x'   && sweptW<3) return;
+  if(band==='y'   && sweptH<3) return;
+  eraseFrom(eraseHitsIn((px,py)=>px>=x&&px<=x+w&&py>=y&&py<=y+h, d.pool!==undefined?d.pool:erasePool()));
+}
+
 /* ---- wheel: scroll / zoom ---- */
 cv.addEventListener('wheel',e=>{
   e.preventDefault();
@@ -2432,12 +2632,24 @@ document.querySelectorAll('#tools button').forEach(b=>b.addEventListener('click'
   if(t==='draw' && view.tool==='draw' && drawMode==='pen' && penNote){ finalizePen(); return; }  // tap draw again to finish the pen path
   setTool(t);
 }));
-function setTool(t){ if(penNote && t!=='draw') finalizePen(); view.tool=t;
+function setPolarity(p){
+  polarity=p;
+  document.querySelectorAll('#polSeg button').forEach(x=>x.classList.toggle('on', x.dataset.pol===p));
+  if(stage) stage.classList.toggle('pol-minus', polarity==='-');
+  updateTargetPill(lastMouse);
+  changed();
+}
+function setTool(t){
+  if(t==='erase'){ setTool('draw'); setPolarity('-'); return; }
+  if(penNote && t!=='draw') finalizePen(); view.tool=t;
   // SELECTION PERSISTS across tools — it is the SCOPE the verbs read (select binds, move/draw consume)
   document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x.dataset.tool===t));
-  const sm=document.getElementById('selModeSeg'); if(sm) sm.classList.toggle('dim', t!=='select');   // set-op chips are select's alone
-  stage.className='stage tool-'+t; cv.style.cursor=''; changed();
+  const sm=document.getElementById('selModeSeg'); if(sm) sm.classList.toggle('dim', t!=='select' && !(autoSelect && t==='move'));   // set-op chips are select's alone
+  stage.className='stage tool-'+t+(polarity==='-'?' pol-minus':''); cv.style.cursor=''; changed();
 }
+document.querySelectorAll('#polSeg button').forEach(b=>b.addEventListener('click',()=>{
+  setPolarity(b.dataset.pol);
+}));
 document.querySelectorAll('#drawModeSeg button').forEach(b=>b.addEventListener('click',()=>{
   const m=b.dataset.dm;
   if(m==='pen' && drawMode==='pen' && penNote){ finalizePen(); return; }   // tap pen chip again to finish the path
@@ -2452,10 +2664,12 @@ function deselectAll(){ selection.clear(); ptSel=new Map(); segSel=null; pointSe
 function selectAllNotes(){ segSel=null; pointSel=null; ptSel=new Map(); selection=new Set(notes.map(n=>n.id)); changed(); }
 document.getElementById('deselBtn').onclick=deselectAll;
 document.getElementById('selAllBtn').onclick=selectAllNotes;
+document.getElementById('delBtn').onclick=()=>{ deleteSelection(); changed(); };
 document.getElementById('autoSelBtn').onclick=()=>{
   autoSelect=!autoSelect;
   document.getElementById('autoSelBtn').classList.toggle('on',autoSelect);
-  flash(autoSelect?'auto-select ON — the cursor picks the target':'auto-select OFF — the selection is authoritative');
+  const sm=document.getElementById('selModeSeg'); if(sm) sm.classList.toggle('dim', view.tool!=='select' && !(autoSelect && view.tool==='move'));
+  flash(autoSelect?'auto-select ON (+sel) — the cursor picks the target':'auto-select OFF — the selection is authoritative');
   changed();
 };
 document.querySelectorAll('#timeRegime button').forEach(b=>b.addEventListener('click',()=>{
@@ -3014,7 +3228,9 @@ function updateTargetPill(hoverP){
   const selPresent=pool.size>0;
   let txt='';
   if(view.tool==='draw'){
-    if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null; txt='draw → '+(h?('note '+h.note.id):'NEW'); }
+    if(polarity==='-'){
+      txt = autoSelect ? 'draw(−) → erase' : (selPresent ? ('draw(−) → sel ('+pool.size+')') : 'draw(−) → –');
+    } else if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null; txt='draw → '+(h?('note '+h.note.id):'NEW'); }
     else if(!selPresent) txt='draw → NEW';
     else txt = pool.size===1 ? ('draw → note '+[...pool][0]) : ('draw → sel ('+pool.size+')');
   } else if(view.tool==='move'){
@@ -3024,7 +3240,7 @@ function updateTargetPill(hoverP){
     txt = 'scope: '+(selPresent ? (selection.size+' note'+(selection.size!==1?'s':'')+(pts?(' +'+pts+'pt'):'')) : 'empty');
   }
   el.textContent=txt||'–';
-  el.classList.toggle('new', view.tool==='draw' && /NEW$/.test(txt));
+  el.classList.toggle('new', view.tool==='draw' && polarity==='+' && /NEW$/.test(txt));
 }
 function updateStatus(){
   const n=notes.length;
@@ -3043,11 +3259,18 @@ function updateStatus(){
 /* keyboard */
 let spaceDown=false;
 window.addEventListener('keydown',e=>{
+  // the export sheet swallows Escape first, even from inside its own fields
+  if(!midiDlg.hidden){ if(e.code==='Escape'){ e.preventDefault(); closeMidiDlg(); } return; }
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
   if(penNote && (e.code==='Enter'||e.code==='Escape')){ e.preventDefault(); finalizePen(); return; }
   if(e.code==='Escape'){ e.preventDefault(); deselectAll(); return; }              // universal deselect (accelerator; ⊘ is the pointer-first control)
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); return; }
-  const map={KeyV:'select',KeyM:'move',KeyD:'draw',KeyE:'erase',KeyS:'slice'};
+  if(e.code==='KeyE' && !e.ctrlKey && !e.metaKey && !e.altKey){
+    if(view.tool!=='draw'){ setTool('draw'); setPolarity('-'); }
+    else setPolarity(polarity==='+'?'-':'+');
+    return;
+  }
+  const map={KeyV:'select',KeyM:'move',KeyD:'draw',KeyS:'slice'};
   if(map[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(map[e.code]);
   const dmap={KeyH:'hold',KeyG:'glide',KeyP:'pen',KeyF:'free'};                    // arity keys jump to draw + set its mode
   if(dmap[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) setDrawMode(dmap[e.code]);
@@ -3717,41 +3940,61 @@ function buildMidiFromScore(){
   return buildMidi(exp, Object.assign(exportOpts(), {timeline:segs, qAtSec, secAtQ}));
 }
 
-document.getElementById('expMidi').onclick=()=>{
-  if(!notes.length){ flash('nothing to export'); return; }
-  const {bytes,warnings,count,voices,channelsUsed}=buildMidiFromScore();
+/* export settings live in a modal sheet — the toolbars stay authoring-only */
+const midiDlg=document.getElementById('midiDlg'), midiDlgStat=document.getElementById('midiDlgStat');
+function openMidiDlg(){ midiDlg.hidden=false; midiDlgStat.textContent=''; }
+function closeMidiDlg(){ midiDlg.hidden=true; }
+document.getElementById('expMidi').onclick=openMidiDlg;
+document.getElementById('midiDlgClose').onclick=closeMidiDlg;
+// the header pill is now a readout of the sheet's bend range, not an editor
+const bendPillVal=document.getElementById('bendPillVal');
+function syncBendPill(){ bendPillVal.textContent=settings.range; }
+bendRange.addEventListener('input',syncBendPill); syncBendPill();
+midiDlg.addEventListener('mousedown',e=>{ if(e.target===midiDlg) closeMidiDlg(); });
+document.getElementById('midiDlgGo').onclick=()=>{
+  if(!notes.length){ midiDlgStat.textContent='nothing to export'; return; }
+  const {bytes,warnings,count,voices,channelsUsed,bendMsgs,bendPts,tracks}=buildMidiFromScore();
   download(new Blob([bytes],{type:'audio/midi'}),'tabota-roll.mid');
   const chs=channelsUsed.map(c=>'v'+c.voice+'→ch'+c.ch).join(', ');
+  const kb=(bytes.length/1024).toFixed(1);
+  midiDlgStat.innerHTML=`${count} note${count!==1?'s':''} · ${voices} voice${voices!==1?'s':''} · ${tracks} track${tracks!==1?'s':''} · ${bendMsgs} bends (of ${bendPts} sampled) · ${kb} kB`
+    + (warnings.length?` · <span class="warn">${warnings.length} hard-walled</span>`:'');
   flash(`exported ${count} notes · ${voices} voice${voices!==1?'s':''} (${chs})`+(warnings.length?` · ${warnings.length} hard-walled`:''));
 };
 function exportOpts(){ return {
   ppq:+ppq.value||480, bpm:settings.bpm, sigNum:Math.max(1,Math.round(settings.sigNum)), sigDen:nearestPow2Den(settings.sigDen),
-  a4:settings.a4, range:settings.range, baseChannel:(+channel.value||1)-1, program:+program.value||0, vel:+vel.value||96, bendSteps:24
+  a4:settings.a4, range:settings.range, baseChannel:(+channel.value||1)-1, program:+program.value||0, vel:+vel.value||96,
+  bendSteps:Math.max(1,+bendSteps.value||24),
+  trackPerVoice:document.getElementById('trackPerVoice').checked,
+  skipDrumChannel:document.getElementById('skipDrumCh').checked
 };}
 
 /* bend report drawer */
 const drawer=document.getElementById('drawer'), drawerBody=document.getElementById('drawerBody'),
  drawerTitle=document.getElementById('drawerTitle');
 document.getElementById('drawerClose').onclick=()=>drawer.classList.remove('open');
-document.getElementById('report').onclick=()=>{
-  if(!notes.length){ flash('nothing to report'); return; }
-  const {report,warnings,voices,channelsUsed}=buildMidiFromScore();
+document.getElementById('midiDlgReport').onclick=()=>{
+  if(!notes.length){ midiDlgStat.textContent='nothing to report'; return; }
+  const {report,warnings,voices,channelsUsed,bendMsgs,bendPts,tracks}=buildMidiFromScore();
+  closeMidiDlg();
   drawerTitle.textContent='Pitch-bend report';
   const maxSpan=Math.max(0.001,...report.map(r=>r.span));
   const chmap=channelsUsed.map(c=>`v${c.voice}→ch${c.ch}`).join(' · ');
-  let html=`<div class="summary"><b>${report.length}</b> notes · <b>${voices}</b> voice${voices!==1?'s':''} · bend ±<b>${settings.range}</b>st<br>
+  let html=`<div class="summary"><b>${report.length}</b> notes · <b>${voices}</b> voice${voices!==1?'s':''} · <b>${tracks}</b> track${tracks!==1?'s':''} · bend ±<b>${settings.range}</b>st<br>
     <span style="color:var(--ink-dim)">${chmap}</span><br>
+    <b>${bendMsgs}</b> bend messages written from <b>${bendPts}</b> sampled points (repeats dropped).<br>
     Each voice is its own MIDI channel with an independent pitch-bend stream; within a voice the line is monophonic (overlaps steal). Each note rides its nearest 12-TET key at onset — exact-12-TET onsets read pb 8192 (center). Bends past ±${settings.range}st hard-wall.</div>`;
   if(warnings.length) html+=`<div class="summary" style="border-color:var(--ember);color:var(--ember)"><b>${warnings.length} hard-walled:</b><br>${warnings.map(w=>'· '+w).join('<br>')}</div>`;
-  html+=`<table><thead><tr><th class="l">beat</th><th>v</th><th>ch</th><th class="l">type</th><th>onset Hz</th><th>key</th><th>¢</th><th>pb14</th><th class="l">span</th></tr></thead><tbody>`;
+  html+=`<table><thead><tr><th class="l">beat</th><th>v</th><th>ch</th><th class="l">type</th><th>onset Hz</th><th>key</th><th>¢</th><th>pb14</th><th title="bend messages written / points sampled">bends</th><th class="l">span</th></tr></thead><tbody>`;
   for(const r of report){
     const w=Math.round((r.span/maxSpan)*60);
     html+=`<tr><td class="l">${r.start.toFixed(2)}</td><td style="color:${voiceColor(r.voice)};font-weight:600">${r.voice}</td><td>${r.ch}</td><td class="l">${r.type}</td><td>${r.startHz.toFixed(2)}</td>
       <td>${r.baseName}</td><td>${r.cents>=0?'+':''}${r.cents.toFixed(0)}</td>
       <td${r.clipped?' class="flag"':''}>${r.pb0}${r.clipped?'⚠':''}</td>
+      <td style="color:var(--ink-dim)">${r.bendMsgs}<span style="color:var(--ink-faint)">/${r.bendPts}</span></td>
       <td class="l"><span class="bendbar" style="width:${w}px;background:${r.overflow?'var(--ember)':'var(--tide)'}"></span> ${r.span.toFixed(2)}st</td></tr>`;
   }
-  html+=`</tbody></table><div class="hint">pb14 = 14-bit bend written at onset (0–16383, 8192=center). “span” = max semitone deviation the note asks of its key; <span style="color:var(--ember)">amber</span> bars exceeded ±${settings.range}st and were hard-walled — widen the bend ± range (header pill) or split the note. Voice→channel lets simultaneous microtonal voices bend independently.</div>`;
+  html+=`</tbody></table><div class="hint">pb14 = 14-bit bend written at onset (0–16383, 8192=center). “bends” = messages actually written / contour points sampled; consecutive identical 14-bit values are dropped, which is lossless. “span” = max semitone deviation the note asks of its key; <span style="color:var(--ember)">amber</span> bars exceeded ±${settings.range}st and were hard-walled — widen the bend ± range (export dialog) or split the note. Voice→channel lets simultaneous microtonal voices bend independently.</div>`;
   drawerBody.innerHTML=html; drawer.classList.add('open');
 };
 
@@ -3786,10 +4029,18 @@ document.getElementById('expJson').onclick=()=>{
     const m=mainSystem(r);
     const rNotes=(r.notes||[]).slice().sort((a,b)=>(a.voice||1)-(b.voice||1)||a.start-b.start);
     const voices=[...new Set(rNotes.map(n=>n.voice||1))].sort((a,b)=>a-b);
-    const beats=Math.max(1, Math.ceil(Math.max(0,...rNotes.map(n=>n.start+n.dur))));
-    const frame={ temporal:'metered',
-      temporalSettings:{ beats, bpm:m.bpm, timeSignature:(m.sigNum||4)+'/'+(m.sigDen||4) },
-      axis:'frequency', axisSettings:{ a4:m.a4 } };
+    const span=Math.max(1, Math.ceil(Math.max(0,...rNotes.map(n=>n.start+n.dur))));
+    // a free-time region emits a CHRONOLOGICAL frame: its coordinate already IS seconds
+    // (beatToSecIn is the identity there), so position.at needs no conversion and the
+    // region round-trips as free time instead of being re-read as beats at some bpm.
+    const chrono = m.kind==='chronological';
+    const frame = chrono
+      ? { temporal:'chronological',
+          temporalSettings:{ duration:Math.max(span, +(m.bars||0)), units:'seconds' },
+          axis:'frequency', axisSettings:{ a4:m.a4 } }
+      : { temporal:'metered',
+          temporalSettings:{ beats:span, bpm:m.bpm, timeSignature:(m.sigNum||4)+'/'+(m.sigDen||4) },
+          axis:'frequency', axisSettings:{ a4:m.a4 } };
     if(m.offset) frame.temporalSettings.offset=m.offset;
     const payload={ voices, midiExport:{ rule:'monophonic-per-voice', voiceToChannel:'voice N → base channel + (N-1)', bendRange:settings.range } };
     // tempo curve rides in payload (chart-model §12): region-local points, `at` in
@@ -3873,9 +4124,12 @@ function _notesFromV2(doc){
   const R = TR.resolve(doc);
 
   // master tempo / time-sig / tuning / bend — from the first metered + pitched frame in the doc
-  let mBpm=null,mNum=null,mDen=null,mA4=null,bend=null,mTempo=null;
+  // mKind is the FIRST temporal frame seen: it decides whether the Roll receives this doc
+  // as free time (seconds) or as a metered grid. Multi-region docs still flatten to one.
+  let mBpm=null,mNum=null,mDen=null,mA4=null,bend=null,mTempo=null,mKind=null;
   (function scan(list){ (list||[]).forEach(e=>{ if(!e||typeof e!=='object') return;
     const f=e.frame||{}, ts=f.temporalSettings||{}, as=f.axisSettings||{};
+    if(f.temporal && mKind==null) mKind=f.temporal;
     if(f.temporal==='metered' && ts.bpm!=null && mBpm==null){ mBpm=+ts.bpm;
       // the tempo curve rides in payload (chart-model §12) — grab it from the same
       // frame that anchors the master bpm so units stay coherent
@@ -3885,8 +4139,10 @@ function _notesFromV2(doc){
     if(e.payload && e.payload.midiExport && e.payload.midiExport.bendRange) bend=+e.payload.midiExport.bendRange;
     if(e.events) scan(e.events);
   }); })(doc.score);
+  const chrono = mKind==='chronological';
   const masterBpm=mBpm||settings.bpm, sigNum_=mNum||settings.sigNum, sigDen_=mDen||settings.sigDen, masterA4=mA4||settings.a4;
-  const SPB = (masterBpm/60)*((sigDen_||4)/4);      // seconds -> UNITS (1/sigDen notes) of the Roll's single frame
+  // seconds -> UNITS of the Roll's single frame. In free time the unit IS the second.
+  const SPB = chrono ? 1 : (masterBpm/60)*((sigDen_||4)/4);
 
   const out=[]; let skipped=0;
   for(const n of R.nodes){
@@ -3920,7 +4176,7 @@ function _notesFromV2(doc){
     if(ncurve && ncurve!=='linear') note.curve=ncurve;
     out.push(note);
   }
-  return {notes:out, bpm:masterBpm, sig:[sigNum_,sigDen_], a4:masterA4, skipped, bend, tempo:mTempo};
+  return {notes:out, bpm:masterBpm, sig:[sigNum_,sigDen_], a4:masterA4, skipped, bend, tempo:mTempo, chrono};
 }
 function _hasV2Shape(list){
   return Array.isArray(list) && list.some(ev=> ev && (ev.frame || ev.value || ev.position || ev.ref));
@@ -3941,8 +4197,12 @@ impJsonFile.onchange=async()=>{
   notes=res.notes; clearGran();
   bpm.value=Math.round(res.bpm);
   if(res.sig){ sigNum.value=res.sig[0]||4; sigDen.value=res.sig[1]||4; }
-  a4.value=res.a4; if(res.bend){ bendRange.value=res.bend; }
-  regions=[makeRegion()]; regions[0].name='Imported'; activeRegionId=regions[0].id; renderRegionTabs();   // fresh region from the imported frame; notes tag to it via normalizeNotes
+  a4.value=res.a4; if(res.bend){ bendRange.value=res.bend; syncBendPill(); }
+  regions=[makeRegion()]; regions[0].name='Imported'; activeRegionId=regions[0].id;
+  // a chronological doc lands in a FREE-TIME region: its note coordinates are already
+  // seconds (SPB=1 above), so the region must read them as seconds, not as beats
+  if(res.chrono) mainSystem(regions[0]).kind='chronological';
+  renderRegionTabs();   // fresh region from the imported frame; notes tag to it via normalizeNotes
   // single-region docs round-trip losslessly: notes recover their beats through the flat
   // resolver, so re-attaching the curve reproduces the original seconds exactly. multi-region
   // docs are flattened (a known Roll-import limitation), so the per-region curve is dropped there.
@@ -3954,9 +4214,13 @@ impJsonFile.onchange=async()=>{
   }
   NID=Math.max(NID,0,...notes.map(n=>n.id))+1;
   const maxB=Math.max(0,...notes.map(n=>n.start+n.dur));
-  bars.value=Math.max(1, Math.ceil((maxB+0.5)/Math.max(1,settings.sigNum)));
+  // free time measures its extent in plain seconds; metered counts bars of the imported meter
+  bars.value = res.chrono ? Math.max(1, Math.ceil(maxB+1))
+                          : Math.max(1, Math.ceil((maxB+0.5)/Math.max(1,settings.sigNum)));
+  mainSystem(regions[0]).bars=+bars.value;
+  applyRegionToControls(regions[0]); updateRegionIndicator();   // model -> DOM before changed() syncs back
   fitContent(); changed();
-  flash(`imported ${notes.length} events`+(res.skipped?` · ${res.skipped} skipped`:''));
+  flash(`imported ${notes.length} events`+(res.chrono?' · free time':'')+(res.skipped?` · ${res.skipped} skipped`:''));
   impJsonFile.value='';
 };
 
