@@ -124,6 +124,36 @@ input[type=number].w48{width:48px}
    under select/move it means "take out of the scope" — a legal gesture, so no refusal cursor. */
 .stage.tool-pan #roll{cursor:grab}
 .seg.dim,button.dim{opacity:.35; pointer-events:none}   /* a control greys out under verbs it can't speak to */
+/* ---- floating windows. Pattern hand-ported from stanzuary (see DEPENDENCIES.md): head-drag with
+   pointer capture, collapse, front-on-touch, clamped to the stage, position in localStorage.
+   The controls inside are MOVED, never rebuilt — a closed window must still be readable, because
+   syncRegionFromControls() reads these inputs by id on every mutation (§6). ---- */
+.rpanel{
+  position:absolute; z-index:16; top:14px; left:14px; width:min(430px, calc(100% - 28px));
+  display:flex; flex-direction:column; max-height:calc(100% - 28px);
+  background:linear-gradient(180deg,#f6f2f9f2,#ece4f2f7); border:1px solid var(--edge);
+  border-radius:10px; box-shadow:0 18px 44px -26px #2a1a3a99; font-size:12px;
+}
+.rpanel[hidden]{display:none}
+.rpanel.front{z-index:17}
+.rpanel-head{
+  display:flex; align-items:center; gap:8px; padding:6px 8px 6px 11px;
+  border-bottom:1px solid var(--edge); cursor:grab; touch-action:none;
+  font-family:var(--mono); color:var(--ink); letter-spacing:.02em;
+}
+.rpanel-head:active{cursor:grabbing}
+.rpanel-head .rpanel-title{font-weight:600}
+.rpanel-head .rpanel-sub{color:var(--ink-dim); font-size:11px}
+.rpanel-head .rspacer{flex:1}
+.rpanel-body{display:flex; flex-direction:column; gap:2px; padding:8px 10px 10px; overflow:auto}
+.rpanel-body .group{flex-wrap:wrap; padding:3px 0}
+.rpanel-body .group + .group{border-left:none; border-top:1px solid var(--edge); padding-left:0; padding-top:7px; margin-top:4px}
+.rpanel.collapsed .rpanel-body{display:none}
+.rpanel.chrono .metered-only{display:none}     /* free time is honestly free — no bpm/sig to author */
+#regionBtn.on{background:var(--tide); border-color:var(--tide); color:#fff}
+@media (max-width:720px){
+  .rpanel{left:0 !important; right:0; top:auto !important; bottom:0; width:100%; max-height:70%; border-radius:12px 12px 0 0}
+}
 #targetPill.new{color:var(--tide); font-weight:600}
 #autoSelBtn.on{background:var(--ember); border-color:var(--ember); color:#fff}
 
@@ -355,12 +385,12 @@ select:disabled{
     <button data-tool="pan" title="Pan (space-drag)">✋ pan</button>
   </div>
   <div class="group">
-    <label>polarity</label>
+    <label>sign</label>
     <div class="seg" id="polSeg">
-      <button data-pol="+" class="on" title="＋ — the universal add. Draw deposits material; select/move add to the scope">＋</button>
-      <button data-pol="-" title="− — the universal take-away. Draw erases material; select/move take out of the scope (E)">−</button>
+      <button data-pol="+" class="on" title="＋ — the universal add. Draw deposits material; select / move·auto add to the scope">＋</button>
+      <button data-pol="-" title="− — the universal take-away. Draw erases material; select / move·auto take out of the scope (E)">−</button>
+      <button data-pol="=" title="⇄ — take away, then add, over one support. Select rebinds the scope (the old ‘replace’); draw OVERWRITES what the deposit covers. Remembered per verb">⇄</button>
     </div>
-    <button id="replaceBtn" class="on dim" title="Replace — a select/move·auto gesture clears the scope before binding the new one (scope − then scope +). Off: gestures accumulate. Shift still adds, Alt still removes, either way">⟳ replace</button>
   </div>
   <div class="group">
     <label>draw</label>
@@ -411,6 +441,13 @@ select:disabled{
   </div>
 
   <div class="group">
+    <button class="tool" id="regionBtn" title="Region — open the frame inspector for the focused region (meter, cycle, tempo calibration, scale, length). Clicking a region's flag on the score opens it too">⛭ region</button>
+  </div>
+
+  <!-- REGION INSPECTOR — these controls are MOVED into #regionPanel at load, node for node.
+       They are never rebuilt: syncRegionFromControls() and the `settings` getters read them by
+       id on every mutation, so a closed window must still be readable (§6). -->
+  <div class="group" id="regionTimeGroup">
     <label>region · time</label>
     <div class="seg regime" id="timeRegime">
       <button data-r="meter" class="on">meter</button>
@@ -429,7 +466,7 @@ select:disabled{
       <button class="tool" id="sigGhost" title="">⌗</button>
     </span>
   </div>
-  <div class="group">
+  <div class="group" id="regionPitchGroup">
     <label>region · pitch</label>
     <div class="seg regime" id="pitchRegime">
       <button data-r="scale" class="on">scale</button>
@@ -495,13 +532,25 @@ select:disabled{
       <option value="0.25">1/16</option><option value="0.5">1/8</option>
       <option value="1" selected>1/4</option><option value="2">1/2</option><option value="4">1/1</option>
     </select>
-    <label id="barsLabel" title="region length — bars of the region's meter, or plain seconds when the region is free time">bars</label><input type="number" id="bars" class="w48" value="8" min="1" max="256">
+    <span id="regionLenWrap" style="display:inline-flex;align-items:center;gap:5px"><label id="barsLabel" title="region length — bars of the region's meter, or plain seconds when the region is free time">bars</label><input type="number" id="bars" class="w48" value="8" min="1" max="256"></span>
   </div>
 </div>
 
 <canvas id="scrub" title="playhead lane — click or drag to place the playhead (the ruler above the grid stays a scroll handle)"></canvas>
 <div class="stage tool-draw" id="stage">
   <canvas id="roll"></canvas>
+  <!-- the region inspector: a floating window over the score. Its controls are moved in at load
+       (see #regionTimeGroup / #regionPitchGroup / #regionLenWrap in the toolbar markup). -->
+  <div class="rpanel" id="regionPanel" hidden>
+    <div class="rpanel-head" id="regionPanelHead">
+      <span class="rpanel-title">region</span>
+      <span class="rpanel-sub" id="regionPanelName">–</span>
+      <span class="rspacer"></span>
+      <button class="tool" id="regionPanelCollapse" title="collapse / expand">−</button>
+      <button class="tool" id="regionPanelClose" title="close — ⛭ region reopens it">×</button>
+    </div>
+    <div class="rpanel-body" id="regionPanelBody"></div>
+  </div>
   <div id="tempoPanel" class="tcollapsed" title="tempo track — bpm over the score. metered regions only; free time has no tempo.">
     <div id="tempoHead">
       <span id="tempoGrip" title="drag to resize"></span>
@@ -891,7 +940,15 @@ const view={
 };
 let drawMode='hold';                 // draw's arity: 'hold' | 'glide' | 'pen' | 'free' — explicit chips, mobile-first
 let autoSelect=false;                // OFF (careful, default): selection is authoritative. ON: cursor proximity picks the target
-let polarity='+';                    // '+' (deposit / include) | '-' (take away / erase)
+let polarity='+';                    // THE SIGN: '+' add | '-' take away | '=' (⇄) take away then add, over one support
+/* CONTRACT 6 — THE SIGN BELONGS TO THE VERB. One variable can't hold two defaults (select wants
+   ⇄, draw wants ＋), so the sign is remembered per verb — and per MODE inside draw, because free
+   means ⇄ where hold/glide/pen mean ＋. The seeding below reproduces every pre-Dev-8 default
+   exactly; it only makes the remaining cells reachable. */
+const signFor={ select:'=', move:'=', slice:'+', pan:'+', draw:{ hold:'+', glide:'+', pen:'+', free:'=' } };
+function signSlotRead(t,dm){ const s=signFor[t]; return (t==='draw') ? (s[dm]||'+') : (s||'+'); }
+function signSlotWrite(t,dm,p){ if(t==='draw') signFor.draw[dm]=p; else if(t in signFor) signFor[t]=p; }
+let signBeforeMinus=null;            // E is "− on/off": it hands back the sign it interrupted
 const settings={
   get bpm(){return +bpm.value||120;}, get sigNum(){return +sigNum.value||4;},
   get sigDen(){return +sigDen.value||4;}, get a4(){return +a4.value||440;},
@@ -1013,8 +1070,12 @@ function deleteRegion(id){
 function renameRegion(id){ const r=regions.find(x=>x.id===id); if(!r) return; const n=prompt('Region name:', r.name||r.id); if(n!=null && n.trim()){ r.name=n.trim(); if(typeof draw==='function') draw(); updateRegionIndicator(); } }
 function updateRegionIndicator(){ const el=document.getElementById('activeRegionName'); const r=activeRegion(), m=mainSystem(r);
   if(el){ el.textContent = (r.name||r.id) + (m? (m.kind==='chronological' ? '  free time' : ('  \u2669'+Math.round(m.bpm)+' '+(m.sigNum||4)+'/'+(m.sigDen||4))) : ''); }
-  const tg=document.getElementById('timeCalib'); if(tg) tg.style.display = (m && m.kind==='chronological') ? 'none' : '';   // free time has no tempo/meter calibration (A4 lives with pitch and stays)
+  const tg=document.getElementById('timeCalib'); if(tg) tg.style.display = (m && m.kind==='chronological') ? 'none' : 'inline-flex';   // free time has no tempo/meter calibration (A4 lives with pitch and stays). NB: restore the row's own display, not '' — that wiped the inline value and left it a plain inline box
   const bl=document.getElementById('barsLabel'); if(bl) bl.textContent = (m && m.kind==='chronological') ? 'secs' : 'bars';  // free-time extent is plain seconds
+  const rp=document.getElementById('regionPanel');                                        // the window states WHICH frame it edits
+  if(rp){ const nm=document.getElementById('regionPanelName');
+    if(nm) nm.textContent = (r.name||r.id) + (m ? (m.kind==='chronological' ? ' · free time' : ' · metered') : '');
+    rp.classList.toggle('chrono', !!m && m.kind==='chronological'); }
 }
 function renderRegionTabs(){ updateRegionIndicator(); }   // tab strip removed — on-canvas region labels are the tabs
 /* ---- pitch regions: NON-extent-defining charts for the y-axis. They hang on absolute seconds
@@ -1216,16 +1277,14 @@ let ptSel=new Map();                // Map<note, Set<ptIdx>> — granular partia
 function ptSelHas(note,idx){ const s=ptSel.get(note); return !!s && s.has(idx); }
 function granCount(){ let c=0; for(const s of ptSel.values()) c+=s.size; for(const id of selection){ const n=notes.find(x=>x.id===id); if(n) c+=n.pts.length; } return c; }
 function clearGran(){ selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; }
-let replaceScope=true;              // ⟳ replace — does a select/move·auto gesture CLEAR the scope first?
-/* THE SET-OP — ONE SIGN, read by every verb (Dev-6 Contract 1: polarity is the single adverb;
-   the VERB names the noun — select's noun is SCOPE, draw's is MATERIAL). `replace` is not a
-   third value of the sign: it is scope(−) then scope(+) over one support — the same fused
-   compound `commitFreeOnto` is for material — so it rides as its own toggle, not a chip.
-   Shift/Alt stay accelerators for the pointer-first chips (Shift wins, as before). */
+/* THE SET-OP — ONE SIGN ROW, read by every verb (Contract 1 + 1a: the sign is the adverb, the
+   VERB names the noun — select's noun is SCOPE, draw's is MATERIAL). `⇄` ('=') is the third
+   value, not a separate toggle: it is scope(−) then scope(+) over one support, and composition
+   WITHIN a noun stays on the row. Shift/Alt stay accelerators (Shift wins, as before). */
 function selOp(e){
   if(e && e.shiftKey) return 'include';
   if((e && e.altKey) || polarity==='-') return 'exclude';
-  return replaceScope ? 'replace' : 'include';
+  return polarity==='=' ? 'replace' : 'include';
 }
 /* marquee dialect of the same three values */
 function marqOp(mode){ return mode==='exclude' ? 'subtract' : (mode==='include' ? 'add' : 'replace'); }
@@ -1739,10 +1798,19 @@ function drawAllGrids(W,H){
   }
   _ctxRegion=null;
 }
+/* the region flags as DRAWN — the hit target is the rendered label, not a re-derivation of it
+   (same rule as deposit containment and THE GRID LAW). Refilled by drawRegionFrames each paint. */
+let regionFlagRects=[];
+function flagAt(p){
+  for(let i=regionFlagRects.length-1;i>=0;i--){ const f=regionFlagRects[i];
+    if(p.x>=f.x && p.x<=f.x+f.w && p.y>=f.y && p.y<=f.y+f.h) return f.id; }
+  return null;
+}
 function drawRegionFrames(W,H){
   ensureRegions();
   ctx.save(); ctx.beginPath(); ctx.rect(GUT_L,GUT_T,W-GUT_L,H-GUT_T); ctx.clip();
   const row1Rects=[];                       // x-extents occupied on the first flag row (time flags + handles)
+  regionFlagRects=[];                       // …and the label rects themselves, so a click can hit what is DRAWN
   for(const r of regions){
     const s0=regionStartSec(r), x0=secToX(s0); const active=(r.id===activeRegionId);
     if(s0>0 && x0>=GUT_L-1 && x0<=W){ ctx.strokeStyle='rgba(106,71,216,0.6)'; ctx.lineWidth=1.6; ctx.setLineDash([5,3]);
@@ -1758,6 +1826,7 @@ function drawRegionFrames(W,H){
     ctx.fillStyle = active ? 'rgba(17,137,126,0.16)' : 'rgba(231,223,238,0.66)';
     ctx.fillRect(lx-5, GUT_T+3, tw, 15);
     row1Rects.push({x:lx-5,w:tw});
+    regionFlagRects.push({id:r.id, x:lx-5, y:GUT_T+3, w:tw, h:15});
     ctx.fillStyle = active ? col('--tide') : 'rgba(40,82,76,0.62)';
     ctx.fillText(label, lx, GUT_T+14);
   }
@@ -2022,6 +2091,9 @@ cv.addEventListener('pointerdown',e=>{
       drag={mode:'boundary', i:bh.i, snap:bh.mode, preview:prev}; return; } }
   // tuning boundaries: slide a pitch divider in time (notes never move — pitch regions hang on seconds)
   { const pb=pitchBoundaryAt(p); if(pb!=null){ drag={mode:'pitchBoundary', i:pb, preview:pitchRegions[pb].startSec}; return; } }
+  // a region's FLAG opens its frame inspector (tested after the boundary handles, so dragging a
+  // boundary never opens a window — the ±13px handles keep priority)
+  { const fid=flagAt(p); if(fid){ openRegionPanel(fid); changed(); return; } }
 
   // contiguous canvas: clicking into a region focuses it (its looks show); editing continues in it
   { const r=regionAtX(p.x); if(r && r.id!==activeRegionId) focusRegion(r.id);
@@ -2155,16 +2227,16 @@ cv.addEventListener('pointerdown',e=>{
     if(drawMode==='hold'){                               // hold = a flat 2-point note; the drag only sets its length (pitch stays level)
       const n={id:NID++, start:beat, dur:settings.defLen, vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
       notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-      drag={mode:'newHoldLen', note:n, sx:p.x, baseStart:beat};
+      drag={mode:'newHoldLen', note:n, sx:p.x, baseStart:beat, sign:polarity};
     } else if(drawMode==='glide'){
       const n={id:NID++, start:beat, dur:Math.max(0.0625,settings.defLen), curve:depositCurve,
                vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
       notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-      drag={mode:'newGlide', note:n, sx:p.x, sy:p.y, baseStart:beat, startHz:hz};
+      drag={mode:'newGlide', note:n, sx:p.x, sy:p.y, baseStart:beat, startHz:hz, sign:polarity};
     } else if(drawMode==='free'){
       const n={id:NID++, start:beat, dur:0.0001, vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
       notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-      drag={mode:'newFree', note:n, baseStart:beat, raw:[{beat,hz}]};
+      drag={mode:'newFree', note:n, baseStart:beat, raw:[{beat,hz}], sign:polarity};
     }
     changed();
   }
@@ -2203,7 +2275,8 @@ function depositIntoNote(n, dm, p){
     const np={t:t2,hz,curve:depositCurve}; const A=(i>0)?n.pts[i-1]:null; const orig=A?segCurve(n,i-1):(n.curve||'linear');
     n.pts.splice(i,0,np); applyAffect(A,np,orig);          // tentative insert; the held drag repositions, release commits
     segSel=null; tempoSel.clear(); pointSel={note:n, idx:i};
-    drag={mode:'resize', freezePitch:glued, note:n, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(n), ghost:{note:n,idx:i}};
+    drag={mode:'resize', freezePitch:glued, note:n, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(n), ghost:{note:n,idx:i},
+          sign:polarity, ovrFrom:(polarity==='=' ? t2 : null)};   // ⇄: the drag's span is cleared on release
     changed(); return;
   }
   if(dm==='pen'){
@@ -2219,11 +2292,14 @@ function depositIntoNote(n, dm, p){
     dragHist=histSnapshot();
     const b=Math.max(n.start, Math.min(n.start+n.dur, xToBeatIn(p.x,home)));
     const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
-    drag={mode:'freeOnto', note:n, raw:[{beat:b,hz}]};
+    drag={mode:'freeOnto', note:n, raw:[{beat:b,hz}], sign:polarity};   // ⇄ replaces the swept span, ＋ merges
     changed(); return;
   }
 }
-/* free-onto commit: replace the swept span's points with the (decimated) scribble.
+/* free-onto commit. Under ⇄ (the remembered default) the swept span is REPLACED by the
+   scribble — unchanged behaviour, now named as a sign rather than hardcoded into the mode.
+   Under ＋ it MERGES: the points beneath survive and the swept ones join them (rejected in
+   Cut-2 Stage-2 as a *default*, legitimate as an explicit sign).
    The note's extent NEVER changes (deposit-confined law); untouched points keep their curves. */
 function commitFreeOnto(d){
   const n=d.note; if(d.raw.length<2) return;               // a bare tap sweeps nothing
@@ -2232,7 +2308,10 @@ function commitFreeOnto(d){
   const minStep=(en-s)/120;                                // decimate like rebuildFree
   const dec=[d.raw[0]]; for(let i=1;i<d.raw.length;i++){ if(d.raw[i].beat-dec[dec.length-1].beat>=minStep) dec.push(d.raw[i]); }
   if(dec[dec.length-1]!==d.raw[d.raw.length-1]) dec.push(d.raw[d.raw.length-1]);
-  const merged=[ ...abs.filter(q=>q.beat<=s+1e-9), ...dec.map(q=>({beat:q.beat,hz:q.hz})), ...abs.filter(q=>q.beat>=en-1e-9) ]
+  const keepInside = d.sign==='+';                         // ＋ = merge: nothing beneath is removed
+  const merged=[ ...(keepInside ? abs : abs.filter(q=>q.beat<=s+1e-9)),
+                 ...dec.map(q=>({beat:q.beat,hz:q.hz})),
+                 ...(keepInside ? [] : abs.filter(q=>q.beat>=en-1e-9)) ]
     .sort((a,b)=>a.beat-b.beat);
   const out=[]; for(const q of merged){ const l=out[out.length-1];
     if(l && Math.abs(q.beat-l.beat)<1e-6){ l.hz=q.hz; l.curve=undefined; continue; }  // sweep overwrites a coincident point
@@ -2492,11 +2571,27 @@ cv.addEventListener('pointerup',e=>{
       pitchRegions.sort((a,b)=>a.startSec-b.startSec);
       flash('tuning boundary moved'); }
     if(drag.mode==='playhead') endScrub();
-    if(drag.mode==='freeOnto'){ commitFreeOnto(drag); }   // replace the swept span (tentative → committed)
+    if(drag.mode==='freeOnto'){ commitFreeOnto(drag); }   // ⇄ replaces the swept span, ＋ merges (tentative → committed)
+    // draw·⇄ onto an existing curve: the drag's own span is cleared, so the deposit is what's left there
+    if(drag.mode==='resize' && drag.sign==='=' && drag.ovrFrom!=null && drag.note){
+      const n=drag.note, tA=Math.min(drag.ovrFrom, n.pts[drag.ptIdx].t), tB=Math.max(drag.ovrFrom, n.pts[drag.ptIdx].t);
+      const kill=new Set();
+      for(let i=0;i<n.pts.length;i++){ if(i===drag.ptIdx) continue; if(n.pts[i].t>tA+1e-9 && n.pts[i].t<tB-1e-9) kill.add(i); }
+      if(kill.size && !removePoints(n, kill)) notes=notes.filter(x=>x!==n);   // ≥2-point law supplies the net
+    }
     if(!['marquee','marqueeErase','freeErase','boundary','pitchBoundary','pan','scrollGutter','playhead'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
     if((drag.mode==='newGlide'||drag.mode==='newFree'||drag.mode==='newHoldLen')){
       // discard a deposit that never grew past a single point
       if(drag.note.pts.length<2){ notes=notes.filter(n=>n!==drag.note); }
+      // draw·⇄ on a NEW note: it overwrites the material it covers. `autoVoice` (run at deposit)
+      // DODGES a collision by taking a free voice — which would make ⇄ a no-op, since it is
+      // voice-scoped. Under ⇄ the deposit does not dodge: it adopts the voice of the topmost
+      // line it covers and takes that span. Covering nothing, it keeps what autoVoice gave it.
+      else if(drag.sign==='='){ const n=drag.note, [s,e]=noteSpanSec(n);
+        const v=voiceUnderSpan(s, e, n.id);
+        if(v!=null) n.voice=v;
+        const k=overwriteUnder(s, e, n.voice||1, new Set([n.id]));
+        if(k) flash('overwrote '+k+' note'+(k!==1?'s':'')); }
     }
     stage.classList.remove('tool-pan');
     drag=null; commitDragHist(); changed();
@@ -2642,24 +2737,33 @@ document.querySelectorAll('#tools button').forEach(b=>b.addEventListener('click'
   if(t==='draw' && view.tool==='draw' && drawMode==='pen' && penNote){ finalizePen(); return; }  // tap draw again to finish the pen path
   setTool(t);
 }));
-/* ⟳ replace speaks only to the verbs that BIND a scope (select, and move when auto is on) */
-function syncScopeChips(t){
-  const rb=document.getElementById('replaceBtn'); if(!rb) return;
-  rb.classList.toggle('dim', t!=='select' && !(autoSelect && t==='move'));
+/* THE SIGN ROW — universal, but a cell with no meaning DIMS rather than lying (Dev-8 §"dim, not
+   invented"): move without auto reads no sign at all; pen has no span, so it cannot overwrite. */
+function syncSignRow(t){
+  const seg=document.getElementById('polSeg'); if(!seg) return;
+  const readsSign = (t==='select') || (t==='draw') || (autoSelect && t==='move');
+  seg.classList.toggle('dim', !readsSign);
+  const eq=seg.querySelector('button[data-pol="="]');
+  if(eq) eq.classList.toggle('dim', t==='draw' && drawMode==='pen');   // pen·⇄ — a tap has no span
 }
-function setPolarity(p){
+function setPolarity(p,remember){
   polarity=p;
+  if(remember!==false) signSlotWrite(view.tool, drawMode, p);          // the sign belongs to the verb (Contract 6)
   document.querySelectorAll('#polSeg button').forEach(x=>x.classList.toggle('on', x.dataset.pol===p));
   if(stage) stage.classList.toggle('pol-minus', polarity==='-');
+  syncSignRow(view.tool);
   updateTargetPill(lastMouse);
   changed();
 }
+/* restore the verb's own sign when the verb (or draw's mode) changes — never carry one verb's
+   sign into another, or select would start depositing and free would stop overwriting */
+function restoreSign(){ setPolarity(signSlotRead(view.tool, drawMode), false); }
 function setTool(t){
   if(t==='erase'){ setTool('draw'); setPolarity('-'); return; }
   if(penNote && t!=='draw') finalizePen(); view.tool=t;
   // SELECTION PERSISTS across tools — it is the SCOPE the verbs read (select binds, move/draw consume)
   document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x.dataset.tool===t));
-  syncScopeChips(t);   // the sign row is universal; only ⟳ replace is scope-only
+  restoreSign();
   stage.className='stage tool-'+t+(polarity==='-'?' pol-minus':''); cv.style.cursor=''; changed();
 }
 document.querySelectorAll('#polSeg button').forEach(b=>b.addEventListener('click',()=>{
@@ -2672,8 +2776,86 @@ document.querySelectorAll('#drawModeSeg button').forEach(b=>b.addEventListener('
 }));
 function setDrawMode(m){ if(penNote && m!=='pen') finalizePen(); drawMode=m;
   document.querySelectorAll('#drawModeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.dm===m));
-  if(view.tool!=='draw') setTool('draw'); else changed();
+  if(view.tool!=='draw') setTool('draw'); else { restoreSign(); changed(); }   // each mode keeps its own sign
 }
+/* ============================================================
+   THE REGION WINDOW (Dev-8 Part B) — the frame inspector, floating over the score.
+   Pattern hand-ported from stanzuary/index.html (logged in DEPENDENCIES.md as a hand-synced
+   interaction pattern; no shared runtime file): head-drag with pointer capture, collapse,
+   front-on-touch, clamped to the stage, position remembered in localStorage.
+   ⚠ The controls are MOVED here node for node and NEVER rebuilt — `syncRegionFromControls()`
+   and the `settings` getters read them by id on every mutation, so a CLOSED window must still
+   be readable (§6, the stale-controls clobber). Hidden, never unmounted.
+   ============================================================ */
+const RPANEL_KEY='tabota.roll.ui';
+(function mountRegionPanel(){
+  const body=document.getElementById('regionPanelBody'); if(!body) return;
+  for(const id of ['regionTimeGroup','regionPitchGroup']){ const g=document.getElementById(id); if(g) body.appendChild(g); }
+  const len=document.getElementById('regionLenWrap');
+  if(len){ const g=document.createElement('div'); g.className='group';               // length is a property OF the frame
+    const lab=document.createElement('label'); lab.textContent='region · length';
+    g.appendChild(lab); g.appendChild(len); body.appendChild(g); }
+})();
+function rpanelPlace(x,y){
+  const p=document.getElementById('regionPanel'), st=document.getElementById('stage'); if(!p||!st) return;
+  const g=8, X=Math.min(Math.max(g,x), Math.max(g, st.clientWidth-p.offsetWidth-g));
+  const Y=Math.min(Math.max(g,y), Math.max(g, st.clientHeight-p.offsetHeight-g));
+  p.style.left=X+'px'; p.style.top=Y+'px';
+}
+function rpanelSave(){
+  const p=document.getElementById('regionPanel'); if(!p) return;
+  try{ localStorage.setItem(RPANEL_KEY, JSON.stringify({
+    x:parseFloat(p.style.left)||14, y:parseFloat(p.style.top)||14,
+    collapsed:p.classList.contains('collapsed'), open:!p.hidden })); }catch(_){}
+}
+function rpanelRestore(){
+  let s={}; try{ s=JSON.parse(localStorage.getItem(RPANEL_KEY)||'{}')||{}; }catch(_){ s={}; }
+  const p=document.getElementById('regionPanel'); if(!p) return;
+  p.classList.toggle('collapsed', !!s.collapsed);
+  document.getElementById('regionPanelCollapse').textContent = s.collapsed ? '+' : '−';
+  rpanelPlace(Number.isFinite(s.x)?s.x:14, Number.isFinite(s.y)?s.y:14);   // place FIRST — opening saves,
+  if(s.open) openRegionPanel();                                            // and would store the unplaced position
+}
+function openRegionPanel(regionId){
+  const p=document.getElementById('regionPanel'); if(!p) return;
+  if(regionId && regionId!==activeRegionId) focusRegion(regionId);
+  applyRegionToControls(activeRegion());      // MODEL → DOM first, always (§6): the next changed() syncs back
+  p.hidden=false; document.getElementById('regionBtn').classList.add('on');
+  updateRegionIndicator();
+  if(!p.style.left) rpanelPlace(14,14);
+  rpanelSave();
+}
+function closeRegionPanel(){
+  const p=document.getElementById('regionPanel'); if(!p) return;
+  p.hidden=true; document.getElementById('regionBtn').classList.remove('on');   // hidden, NOT unmounted
+  rpanelSave();
+}
+document.getElementById('regionBtn').onclick=()=>{
+  const p=document.getElementById('regionPanel');
+  if(p.hidden) openRegionPanel(); else closeRegionPanel();
+};
+document.getElementById('regionPanelClose').onclick=closeRegionPanel;
+document.getElementById('regionPanelCollapse').onclick=(e)=>{
+  const p=document.getElementById('regionPanel');
+  p.classList.toggle('collapsed');
+  e.currentTarget.textContent = p.classList.contains('collapsed') ? '+' : '−';
+  rpanelSave();
+};
+(function dragRegionPanel(){
+  const head=document.getElementById('regionPanelHead'), p=document.getElementById('regionPanel'), st=document.getElementById('stage');
+  if(!head||!p||!st) return;
+  head.addEventListener('pointerdown', e=>{
+    if(e.button!==0 || e.target.closest('button')) return;
+    const sr=st.getBoundingClientRect(), pr=p.getBoundingClientRect();
+    const s={x:e.clientX, y:e.clientY, left:pr.left-sr.left, top:pr.top-sr.top};
+    head.setPointerCapture(e.pointerId); e.preventDefault();
+    const move=ev=>rpanelPlace(s.left+ev.clientX-s.x, s.top+ev.clientY-s.y);
+    const up=ev=>{ head.removeEventListener('pointermove',move); head.removeEventListener('pointerup',up);
+      head.removeEventListener('pointercancel',up); try{ head.releasePointerCapture(ev.pointerId); }catch(_){}
+      rpanelSave(); };
+    head.addEventListener('pointermove',move); head.addEventListener('pointerup',up); head.addEventListener('pointercancel',up);
+  });
+})();
 /* universal scope controls — pointer-first (keys are accelerators only) */
 function deselectAll(){ selection.clear(); ptSel=new Map(); segSel=null; pointSel=null; tempoSel.clear(); changed(); }
 function selectAllNotes(){ segSel=null; pointSel=null; ptSel=new Map(); selection=new Set(notes.map(n=>n.id)); changed(); }
@@ -2683,7 +2865,7 @@ document.getElementById('delBtn').onclick=()=>{ deleteSelection(); changed(); };
 document.getElementById('autoSelBtn').onclick=()=>{
   autoSelect=!autoSelect;
   document.getElementById('autoSelBtn').classList.toggle('on',autoSelect);
-  syncScopeChips(view.tool);
+  syncSignRow(view.tool);
   flash(autoSelect?'auto-select ON (+sel) — the cursor picks the target':'auto-select OFF — the selection is authoritative');
   changed();
 };
@@ -3134,9 +3316,75 @@ function splitNoteAt(note, idxs){
     if(slice.length<2) continue;
     const start=slice[0].beat, end=slice[slice.length-1].beat, dur=Math.max(1e-4,end-start);
     const pts=slice.map((q,j)=>{ const o={t:(q.beat-start)/dur, hz:q.hz}; if(q.curve && j<slice.length-1) o.curve=q.curve; return o; });
-    pieces.push({id:NID++, start, dur, curve:note.curve, vel:note.vel, voice:note.voice||1, pts});
+    const piece={id:NID++, start, dur, curve:note.curve, vel:note.vel, voice:note.voice||1, pts};
+    if(note.region!=null) piece.region=note.region;      // pieces stay in their home chart, not the active one
+    if(note.hangsOn!=null) piece.hangsOn=note.hangsOn;
+    pieces.push(piece);
   }
   return pieces;
+}
+
+/* ============================================================
+   CARVE — the cut that draw·⇄ (overwrite) and draw·split share (Dev-8).
+   Remove the span the gesture covers; keep what it doesn't. BOTH remnants survive
+   (Contract 4, carve-not-displace). The count is never chosen: it falls out as the
+   connected components of span(note) ∖ span(cut) (Contract 2). Annihilation needs no
+   stipulation — a one-point remnant is not well-formed, so `splitNoteAt` drops it
+   (Contract 3: the act stays "cut" even when the net is −1 note).
+   Works in SECONDS, in the note's OWN chart, so a carve under a tempo ramp lands where
+   the note is drawn — sibling of THE GRID LAW.
+   ============================================================ */
+function noteSpanSec(n){
+  const home=regionById(n.region)||activeRegion();
+  return [beatToSecIn(n.start,home), beatToSecIn(n.start+n.dur,home)];
+}
+/* insert a breakpoint at normalized t, interpolating pitch by the segment's own shape */
+function insertPointAtT(n, t){
+  let i=0; while(i<n.pts.length && n.pts[i].t<t) i++;
+  if(i>0 && Math.abs(n.pts[i-1].t-t)<1e-9) return i-1;          // already a point there
+  if(i<n.pts.length && Math.abs(n.pts[i].t-t)<1e-9) return i;
+  const seg=Math.max(0,i-1), curve=segCurve(n,seg);
+  const np={t, hz:pitchAt(n,t)}; if(curve && curve!=='linear') np.curve=curve;   // both halves keep the shape
+  n.pts.splice(i,0,np);
+  return i;
+}
+function carveSpan(note, sec0, sec1){
+  if(sec1<sec0){ const t=sec0; sec0=sec1; sec1=t; }
+  const [nS,nE]=noteSpanSec(note);
+  if(sec1<=nS+1e-9 || sec0>=nE-1e-9) return [note];             // no overlap — untouched
+  if(sec0<=nS+1e-9 && sec1>=nE-1e-9) return [];                 // fully covered — annihilated
+  const home=regionById(note.region)||activeRegion();
+  const work=snapshot(note); work.region=note.region; work.hangsOn=note.hangsOn;
+  const tOf=(sec)=>{ const b=secToBeatIn(sec,home); return Math.max(0,Math.min(1,(b-note.start)/Math.max(1e-9,note.dur))); };
+  const idxs=[];
+  if(sec0>nS+1e-9) idxs.push(insertPointAtT(work, tOf(sec0)));
+  if(sec1<nE-1e-9) idxs.push(insertPointAtT(work, tOf(Math.max(sec1,sec0))));
+  const uniq=[...new Set(idxs)].sort((a,b)=>a-b).filter(i=>i>0 && i<work.pts.length-1);
+  if(!uniq.length) return [note];
+  const pieces=splitNoteAt(work, uniq);
+  // drop the piece(s) the gesture covers: any whose midpoint lies inside the cut span
+  return pieces.filter(p=>{ const [s,e]=noteSpanSec(p); const mid=(s+e)/2; return !(mid>sec0-1e-9 && mid<sec1+1e-9); });
+}
+/* which voice does a ⇄ deposit take over? the TOPMOST line it covers (draw over that line and
+   it is the one you replace); null when it covers nothing, and the deposit keeps autoVoice's. */
+function voiceUnderSpan(sec0, sec1, exceptId){
+  for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; if(n.id===exceptId) continue;
+    const [s,e]=noteSpanSec(n); if(s<sec1-1e-9 && e>sec0+1e-9) return n.voice||1; }
+  return null;
+}
+/* draw·⇄ — material(−) then material(+): clear the covered span in this voice, then the deposit
+   lands. This is Dev-5's tier-3 "tiling ON" as a gesture; move stays free to break it (Contract 5). */
+function overwriteUnder(sec0, sec1, voice, exceptIds){
+  if(!(sec1>sec0)) return 0;
+  const keep=[]; let touched=0;
+  for(const n of notes){
+    if((exceptIds && exceptIds.has(n.id)) || (n.voice||1)!==voice){ keep.push(n); continue; }
+    const pieces=carveSpan(n, sec0, sec1);
+    if(pieces.length===1 && pieces[0]===n){ keep.push(n); continue; }
+    touched++; keep.push(...pieces);
+  }
+  if(touched){ notes=keep; if(pointSel && !notes.includes(pointSel.note)) pointSel=null; }
+  return touched;
 }
 function splitSelection(){
   const map=new Map();   // note -> Set(interior split idx)
@@ -3154,13 +3402,6 @@ function splitSelection(){
 }
 document.getElementById('splitBtn').onclick=splitSelection;
 
-/* ⟳ replace — the scope compound (scope(−) then scope(+)); the sign itself lives in #polSeg */
-document.getElementById('replaceBtn').onclick=()=>{
-  replaceScope=!replaceScope;
-  document.getElementById('replaceBtn').classList.toggle('on',replaceScope);
-  flash(replaceScope?'replace ON — a select gesture clears the scope first':'replace OFF — select gestures add to the scope');
-  updateTargetPill(lastMouse);
-};
 document.querySelectorAll('#selBandSeg button').forEach(b=>b.addEventListener('click',()=>{
   selBand=b.dataset.b;
   document.querySelectorAll('#selBandSeg button').forEach(x=>x.classList.toggle('on',x===b));
@@ -3245,17 +3486,18 @@ function updateTargetPill(hoverP){
   const selPresent=pool.size>0;
   let txt='';
   if(view.tool==='draw'){
+    const v = polarity==='=' ? 'draw(⇄)' : 'draw';       // ⇄ overwrites what the deposit covers
     if(polarity==='-'){
       txt = autoSelect ? 'draw(−) → erase' : (selPresent ? ('draw(−) → sel ('+pool.size+')') : 'draw(−) → –');
-    } else if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null; txt='draw → '+(h?('note '+h.note.id):'NEW'); }
-    else if(!selPresent) txt='draw → NEW';
-    else txt = pool.size===1 ? ('draw → note '+[...pool][0]) : ('draw → sel ('+pool.size+')');
+    } else if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null; txt=v+' → '+(h?('note '+h.note.id):'NEW'); }
+    else if(!selPresent) txt=v+' → NEW';
+    else txt = pool.size===1 ? (v+' → note '+[...pool][0]) : (v+' → sel ('+pool.size+')');
   } else if(view.tool==='move'){
     txt = selPresent ? ('move → '+(pool.size===1?('note '+[...pool][0]):('sel ('+pool.size+')'))) : (autoSelect?'move → hover':'move → –');
   } else if(view.tool==='select'){
     const pts=[...ptSel.values()].reduce((s,v)=>s+v.size,0);
     // the sign is universal: under select it names what the next click does to the SCOPE
-    const op = polarity==='-' ? 'scope(−): ' : (replaceScope ? 'scope: ' : 'scope(＋): ');
+    const op = polarity==='-' ? 'scope(−): ' : (polarity==='=' ? 'scope: ' : 'scope(＋): ');
     txt = op+(selPresent ? (selection.size+' note'+(selection.size!==1?'s':'')+(pts?(' +'+pts+'pt'):'')) : 'empty');
   }
   el.textContent=txt||'–';
@@ -3285,7 +3527,10 @@ window.addEventListener('keydown',e=>{
   if(e.code==='Escape'){ e.preventDefault(); deselectAll(); return; }              // universal deselect (accelerator; ⊘ is the pointer-first control)
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); return; }
   if(e.code==='KeyE' && !e.ctrlKey && !e.metaKey && !e.altKey){
-    setPolarity(polarity==='+'?'-':'+');   // the sign is universal (Contract 1) → toggle IN PLACE, never yank the verb
+    // the sign is universal → toggle IN PLACE, never yank the verb. With three values E means
+    // "− on/off": it remembers the sign it interrupted and gives it back.
+    if(polarity!=='-'){ signBeforeMinus=polarity; setPolarity('-'); }
+    else setPolarity(signBeforeMinus||'+');
     return;
   }
   const map={KeyV:'select',KeyM:'move',KeyD:'draw',KeyS:'slice'};
@@ -4311,7 +4556,10 @@ function seed(){
 populateRoot(); populateScaleSelect(); loadManifest();
 populateCycleSelect(); loadCycManifest();
 window.addEventListener('load',()=>{
-  resize(); seed(); applyRegionToControls(activeRegion()); updateRegionIndicator(); fitContent(); regimePill(); changed();
+  resize(); seed(); applyRegionToControls(activeRegion()); updateRegionIndicator(); fitContent(); regimePill();
+  restoreSign();            // the row shows the ACTIVE verb's remembered sign from the first frame
+  rpanelRestore();          // the region window comes back where it was left
+  changed();
   // The flex layout and the late Google-fonts swap resize the canvas box AFTER load, so the first
   // fit runs against a smaller canvas and the seed reads compressed. Re-fit once the box settles.
   // Bounded to a short startup window so a slow font swap can't clobber a view the user has by then

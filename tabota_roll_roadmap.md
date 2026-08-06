@@ -1470,3 +1470,154 @@ deleted, `move·auto` `replace` bug fixed structurally. Verified: `verify_setop.
 the live functions, 4/4 script blocks parse-clean, browser-measured on :8000 with the error trap
 armed (zero errors). Undone: nothing from this pass; the feel items above are unresolved, and the
 build order now starts at draw·split.
+
+---
+
+## Development 8 (2026-08-06) — CONTRACT, settled before code
+
+Two items, one sitting: the sign row grows a third value, and the region controls leave the
+toolbar for a floating window. Owner rulings taken before any code, per §10.
+
+### Contract 1a — THE ROW IS CLOSED UNDER SEQUENTIAL COMPOSITION WITHIN A NOUN
+*(amends Dev-6 Contract 1; supersedes Dev-7's toggle placement)*
+
+The sign row carries **programs over the verb's noun**: `＋`, `−`, and `⇄` (= `−` then `＋` over
+one support). Dev-6 said `replace` could not be a value of the sign because it is a fused
+compound. Too strict: the compound never leaves its noun, and a row of programs over one noun is
+**closed** under sequential composition. Only **diagonal** compounds — across two nouns, e.g.
+draw·split = material(+) ∧ boundary(+) — stay off the row.
+
+⇒ `⟳ replace` (the Dev-7 toggle) becomes the third chip `⇄`. Being on the universal row, it
+acquires a meaning under **draw** it never had: **overwrite**. This is not machinery invented for
+a chip — `commitFreeOnto` has been draw·⇄ since Cut-2 Stage-2, hardcoded into one mode.
+
+**Retrodiction:** draw·⇄ on new notes **is** Dev-5's tier-3 "tiling ON" — the deposit that
+restores one-note-per-time-per-voice, which Contract 5 frees `move` to break. Tiling was never a
+document invariant; it is this chip.
+
+### Contract 6 — THE SIGN BELONGS TO THE VERB (per-verb memory)
+One sign variable cannot hold two defaults (select wants `⇄`, draw wants `＋`). The sign is
+therefore **remembered per verb**, and per draw MODE inside draw:
+`select ⇄ · move ⇄ · slice ＋ · draw{ hold ＋ · glide ＋ · pen ＋ · free ⇄ }`.
+The row always shows the ACTIVE verb's sign, so nothing is hidden, and **this seeding reproduces
+every current default exactly** — select rebinds, hold/glide/pen deposit, free-onto replaces the
+swept span. Every cell becomes reachable without changing what anything does at boot.
+
+### The cell table (settled)
+| draw mode | onto existing (scope bound) | new note (empty scope) |
+|---|---|---|
+| free | `⇄` = `commitFreeOnto`, **unchanged** · `＋` = MERGE (keep what's under the scribble) | deposit, then overwrite the covered span |
+| hold / glide | `⇄` clears points strictly inside the drag's span | deposit, then overwrite |
+| pen | `⇄` **dims** — a tap has no span | deposit, then overwrite |
+
+`free·＋` (merge) is the cell that opens up: rejected in Cut-2 Stage-2 as a *default* ("a scribble
+means redraw"), it is legitimate as an explicit sign. Free's remembered default stays `⇄`.
+
+**Dim, not invented** (named seams): `pen·⇄` onto existing · any sign under `move` with auto OFF ·
+`slice·⇄` (= boundary(−) then boundary(+) — *reposition a boundary*; belongs to the region-tool cut).
+
+### `carveSpan` — one primitive, two callers
+draw·⇄ over foreign material and **draw·split (ROADMAP item 2)** are the same cut: remove what the
+gesture covers, keep what it doesn't, both remnants surviving (Contract 4). Built once here:
+`carveSpan(note, sec0, sec1) → pieces` — works in the note's OWN chart, containment tested where
+the note is **rendered** (the rule that fixed the Dev-6 deposit bug, sibling of THE GRID LAW),
+interpolated boundary points via `pitchAt`, partition delegated to the existing `splitNoteAt`
+(no second splitter). The **≥2-point law** supplies annihilation for free — Contract 3's act-vs-net
+divergence, arriving exactly where predicted. ⇒ item 2 becomes mostly wiring.
+
+### The region window
+`region · time` + `region · pitch` + `bars` move out of the toolbar into a draggable, collapsible
+floating window — most of ROADMAP item 4 (contextual frame inspector). Opens **two ways**: a
+`⛭ region` toolbar button and a **click on a region flag** (which binds the window to that region).
+The panel pattern is hand-ported from [stanzuary](file:///f:/xyh/stanzuary/index.html) (`initPanel`
+and friends): head-drag with pointer capture, collapse, front-on-touch, clamped to the stage,
+`localStorage` for position only — chrome, never score. Logged in DEPENDENCIES.md as a hand-synced
+interaction pattern, like `rnd()` and the ghost-add port; no shared runtime file.
+
+> **⚠ The constraint that governs the whole window (§6, the stale-controls clobber).**
+> `changed()` → `syncRegionFromControls()` and the `settings` getters read those inputs **by id,
+> from the DOM, every mutation**. The window therefore MOVES the existing nodes and hides with
+> CSS — **never unmount, never clone, never re-create an input.** A closed window must still be
+> readable. Flag-click binds by calling `applyRegionToControls(r)` FIRST, as always.
+
+### Development 8 — BUILT (2026-08-06), logic-proven + browser-measured
+
+Both parts landed in one sitting. Contracts above were settled before any code, as always.
+
+**Part A — `⇄` on the sign row.**
+- `#polSeg` is now `＋ · − · ⇄` (`data-pol="="` internally). The Dev-7 `⟳ replace` toggle and
+  `replaceScope` are **deleted**; `selOp(e)` reads the sign alone.
+- **Per-verb memory** (`signFor` + `signSlotRead/Write`, restored by `restoreSign()` from
+  `setTool`/`setDrawMode`/boot). Seeding: `select ⇄ · move ⇄ · slice ＋ · draw{hold ＋ · glide ＋ ·
+  pen ＋ · free ⇄}` — every pre-Dev-8 default reproduced exactly.
+- **Dim, not lying** (`syncSignRow`): the whole row dims under `move` with auto OFF (no sign is
+  read there); `⇄` alone dims under `pen`.
+- `E` is now "− on/off": it remembers the sign it interrupted and hands it back (`signBeforeMinus`).
+- **`carveSpan(note,sec0,sec1)`** + `insertPointAtT` + `noteSpanSec` + `overwriteUnder` +
+  `voiceUnderSpan`, built beside `splitNoteAt` and delegating the partition to it.
+- **`splitNoteAt` now carries `region` and `hangsOn` onto its pieces.** It never did; pieces
+  relied on `normalizeNotes()` handing them the ACTIVE region, which is wrong for any note split
+  in a non-active region. Pre-existing, found while building carve, fixed here.
+- Draw cells: free `⇄` = `commitFreeOnto` unchanged, free `＋` = merge; hold/glide `⇄` clears the
+  points its drag spans; every new-note deposit under `⇄` calls `overwriteUnder`.
+- **One design fork settled at the keyboard, worth keeping:** `autoVoice` DODGES a collision by
+  taking the first free voice, which would have made `⇄` a silent no-op (it is voice-scoped). A
+  `⇄` deposit therefore does not dodge — it adopts the voice of the topmost line it covers
+  (`voiceUnderSpan`) and takes that span. Covering nothing, it keeps what `autoVoice` gave it.
+
+**Part B — the region window.** `region · time`, `region · pitch`, and the length field are moved
+(node for node, ids intact) into `#regionPanel`, a floating window inside the stage: head-drag with
+pointer capture, collapse, close, clamped to the stage, position + open + collapsed persisted in
+`localStorage` under `tabota.roll.ui` (Roll's first key; chrome only, never score). Opens from
+`⛭ region` **and** from a click on a region's flag (`regionFlagRects` cached by `drawRegionFrames`,
+`flagAt(p)` tested AFTER the boundary handles so dragging a boundary never opens a window). The head
+names the bound region and the panel carries `.chrono`, which hides the metered-only rows.
+Bug caught during the browser pass: `openRegionPanel()` saves, so restore had to **place before
+opening** or every reload stored the unplaced position and the window walked back to 14,14.
+Also: `updateRegionIndicator` used to restore `timeCalib` with `style.display=''`, which wiped the
+row's own `inline-flex` — now restored explicitly.
+
+**Proven (Node, extracted from the live HTML):** `verify_setop` **50** (three values; per-verb and
+per-mode memory; boot parity with Dev 7; `⇄` reachable; Shift>Alt order; totality; `−` never
+rebinds) · `verify_carve` **38** (the gesture lab's 9/9 configuration table verbatim — Contract 2;
+both remnants survive in place with voice/region/pitch-at-the-cut conserved — Contract 4; full
+coverage annihilates — Contract 3; a carve under a tempo RAMP lands where the note is drawn, with
+the beat-spans differing to prove it is not flat arithmetic; `overwriteUnder` is voice-scoped and
+exempts the deposit) · `verify_freeonto` **20** (⇄ replaces the swept span, ＋ keeps everything
+beneath, both leave the extent and monotonicity intact, bare tap is a no-op under either sign).
+All 4 `<script>` blocks parse-check clean.
+
+**Browser-measured (localhost:8000, page-scope error trap armed, ZERO errors):** sign memory across
+select→draw→free→pen→hold and the dim rules; select `⇄`/`＋`/`−` bind, accumulate, remove; `E`
+toggles − in place and restores `⇄`; **draw·⇄ on new notes — partial overlap nets +1 (deposit lands,
+incumbent carved to one remnant) and full coverage nets −1 (deposit lands, incumbent annihilated),
+with the deposit adopting the covered note's voice; one undo per gesture restores 13**; the window
+opens from the button and from all three region flags (Intro / Free / Coda), drags, persists across
+reload, hides the metered rows and reads `secs` on the free-time region; panel stays inside the
+stage and becomes a full-width sheet at 375px with no horizontal overflow; **the clobber test —
+`♩=` edited INSIDE the window relabels the region (bars 2 → 2.5 at 120→150), and with the window
+CLOSED the same edit still syncs**, which is the §6 guarantee.
+
+**⚠ DEFECT FOUND, NOT FIXED (pre-existing, confirmed against the committed Dev-7 file):** the `♩=`
+relabel is **asymmetric**. Raising bpm conserves the span (bars remap, GOLDEN RULE holds); lowering
+it does NOT — bars stay put and the region's seconds GROW. Measured on both builds:
+`120→150` bars 2→2.5, span 4.0s→4.0s ✔; `150→120` bars 2.5→2.5, span 4.0s→5.0s ✘; the error
+compounds over a cycle (120→150→120→150→120 walks 4.0s → 6.25s). This violates invariant 2 (the
+GOLDEN RULE) in one direction only. It is NOT caused by the window move — the baseline file
+reproduces it exactly. Worth its own sitting: it is a conservation bug, and conservation is the law
+the region model is built on.
+
+**Needs feel (xyh):** whether `⇄` reads as a sign rather than a mode; overwrite-on-deposit while
+composing; free·＋ (merge) as a real option; the window's default position and size, whether
+flag-click opening it is welcome or intrusive, and whether the collapse/close pair is one control
+too many.
+
+**NEXT:** `draw·split` — now mostly wiring over `carveSpan` (carve is built and proven; what remains
+is the gesture and its chip). Then the ♩= relabel asymmetry above, or `erase·sever`, owner's call.
+
+2026-08-06 — Claude Code — Dev 8: `⇄` joins the sign row with per-verb memory; `carveSpan`/
+`overwriteUnder` built and proven (draw·split is now wiring); region controls moved into a floating,
+draggable, persisted frame inspector opened by button or region flag. Verified: 108 Node assertions
+across three harnesses extracted from the live file, 4/4 script blocks parse-clean, browser-measured
+with the error trap armed (zero errors). Undone: the ♩= relabel asymmetry documented above is left
+in place, and the feel items are unresolved. Harnesses live in the scratchpad `tt/`, as before.
