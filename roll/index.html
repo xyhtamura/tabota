@@ -3209,7 +3209,13 @@ function relabelActiveRegion(fn){
   const abs=notes.filter(n=>n.region===r.id).map(n=>({n, sec:rs+n.start*spb, endSec:rs+(n.start+(n.dur||0))*spb}));
   const hangPre=new Map();
   for(const n of notes){ if(n.end&&n.end.region===r.id) hangPre.set(n, rs+n.end.beat*spb); }
+  const oldBpm=m.bpm||120;
   fn(m);                                                       // apply the edit (new bpm / sig / kind from controls)
+  if(m.tempo && m.tempo.length){
+    const ratio=(oldBpm>0)? (m.bpm||120)/oldBpm : 1;
+    for(const p of m.tempo) p.bpm=clampBpm(p.bpm*ratio);
+  }
+  tempoMapDirty();
   m.bars = secLen/regUnitSec(m);   // extent conserved: units remap onto it
   const ups2=unitsPerSec(m);
   for(const {n,sec,endSec} of abs){ n.start=(sec-rs)*ups2; n.dur=Math.max(1e-4,(endSec-sec)*ups2); }  // notes frozen in time

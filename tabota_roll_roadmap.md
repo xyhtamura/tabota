@@ -1692,11 +1692,26 @@ under the cursor, which is the only reliable way to find where anything actually
 
 **Still open / next:** `erase·sever` (the empty cell; minimum-material degeneracy documented in
 Dev 6) · `draw·merge`, the counterpart compound — material(+) ∧ boundary(−) — now that split has
-a shape to mirror · the ♩= relabel asymmetry (Dev 8, a separate session is on it) ·
-`tabota/gesturelab/` is now **due for deletion** by the Dev-6 ruling, since draw·split has landed.
+a shape to mirror · `tabota/gesturelab/` is now **due for deletion** by the Dev-6 ruling, since draw·split has landed.
 
 2026-08-06 — Claude Code — Dev 9: reverted ⇄-as-overwrite to ⇄-as-unbind (Contract 6a, owner's
 correction), built ⌗ draw·split over `carveSpan`. Verified: 118 Node assertions across four
 harnesses extracted from the live file, 4/4 script blocks parse-clean, browser-measured with the
 error trap armed (zero errors). Undone: `erase·sever` and `draw·merge` unbuilt; gesturelab not yet
 deleted (left for the owner to confirm, since it is untracked and git cannot bring it back).
+
+---
+
+## Development 10 (2026-08-14) — ♩= RELABEL ASYMMETRY FIXED (Seconds Extent Conservation)
+
+Fixes the pre-existing relabel asymmetry documented in Dev 8.
+
+### Root cause & fix
+- **Root cause:** `relabelActiveRegion` captured the seconds extent `secLen = regionSecLen(r)` and updated `m.bpm`, but it left `m.tempo` untouched. Because `ensureTempoFloor()` initialises `m.tempo` at boot (`[{at:0, bpm:120}]`), `regionHasOwnTempo(m)` was true, and `buildTempoMap()` derived the region's duration from `m.tempo` (still at 120 bpm) rather than `m.bpm` (150). A 2.5 bar region re-calculated at 120 bpm expanded to 5.0 seconds.
+- **Fix:** `relabelActiveRegion(fn)` now scales explicit `m.tempo` points by `ratio = newBpm / oldBpm` and calls `tempoMapDirty()`.
+- **Result:** `regionSecLen` remains strictly conserved across all BPM changes: `120 → 150 → 120 → 90 → 120` measures `4.0s (2.0 bars) → 4.0s (2.5 bars) → 4.0s (2.0 bars) → 4.0s (1.5 bars) → 4.0s (2.0 bars)`.
+
+**Proven (Node, `verify_relabel.cjs` extracted from live HTML):** exact 4.0s conservation and symmetric bar remapping across 120 → 150 → 120 → 90 → 120 cycles. Script blocks parse-check clean.
+
+2026-08-14 — Antigravity — Dev 10: fixed ♩= relabel asymmetry by scaling explicit `m.tempo` points during `relabelActiveRegion` and invalidating `tempoMapDirty()`. Verified: Node assertion test `verify_relabel.cjs` passed (4.0s exact conservation).
+
