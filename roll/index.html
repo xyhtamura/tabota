@@ -400,6 +400,7 @@ select:disabled{
       <button data-dm="pen" title="Pen — new: click successive points, double-click/Enter to finish. Into a curve: each tap commits one point (P)">✎ pen</button>
       <button data-dm="free" title="Free — new: scribble a contour. Into a curve: the swept span is REDRAWN by the scribble (F)">∿ free</button>
     </div>
+    <button id="splitBtnDraw" title="Split (⌗) — with a note bound, the stroke CUTS it instead of drawing into it: the note keeps what lies outside the stroke and the stroke lands between the remnants. Needs a bound scope, ＋, and a mode with a span (not pen)">⌗ split</button>
   </div>
   <div class="group">
     <label>select</label>
@@ -942,13 +943,16 @@ let drawMode='hold';                 // draw's arity: 'hold' | 'glide' | 'pen' |
 let autoSelect=false;                // OFF (careful, default): selection is authoritative. ON: cursor proximity picks the target
 let polarity='+';                    // THE SIGN: '+' add | '-' take away | '=' (⇄) take away then add, over one support
 /* CONTRACT 6 — THE SIGN BELONGS TO THE VERB. One variable can't hold two defaults (select wants
-   ⇄, draw wants ＋), so the sign is remembered per verb — and per MODE inside draw, because free
-   means ⇄ where hold/glide/pen mean ＋. The seeding below reproduces every pre-Dev-8 default
-   exactly; it only makes the remaining cells reachable. */
-const signFor={ select:'=', move:'=', slice:'+', pan:'+', draw:{ hold:'+', glide:'+', pen:'+', free:'=' } };
+   ⇄, draw wants ＋), so the sign is remembered per verb — and per MODE inside draw.
+   CONTRACT 6a — ⇄ SPEAKS TO THE BINDING, NOT THE MATERIAL (owner, 2026-08-06). ⇄ is scope(−)
+   then act: select rebinds the scope; draw UNBINDS and deposits a NEW note, touching nothing
+   that was selected (`autoVoice` then dodges the overlap as usual, so you get two notes).
+   ⇒ ⇄ nullifies ⌗ split, which needs something bound to cut. */
+const signFor={ select:'=', move:'=', slice:'+', pan:'+', draw:{ hold:'+', glide:'+', pen:'+', free:'+' } };
 function signSlotRead(t,dm){ const s=signFor[t]; return (t==='draw') ? (s[dm]||'+') : (s||'+'); }
 function signSlotWrite(t,dm,p){ if(t==='draw') signFor.draw[dm]=p; else if(t in signFor) signFor[t]=p; }
 let signBeforeMinus=null;            // E is "− on/off": it hands back the sign it interrupted
+let drawSplit=false;                 // ⌗ split — the stroke cuts the bound note instead of entering it
 const settings={
   get bpm(){return +bpm.value||120;}, get sigNum(){return +sigNum.value||4;},
   get sigDen(){return +sigDen.value||4;}, get a4(){return +a4.value||440;},
@@ -2211,13 +2215,20 @@ cv.addEventListener('pointerdown',e=>{
       changed(); return;
     }
     if(drawMode==='pen' && penNote){ penTapNew(); return; }        // live pen session keeps its taps
-    let target=null;
+    // ⇄ (Contract 6a) — the sign speaks to the BINDING: unbind first, then draw a NEW note.
+    // Nothing selected is touched; autoVoice sends the newcomer to a free voice as usual.
+    if(polarity==='='){ clearGran(); tempoSel.clear(); }
+    let target=null, splitTargets=null;
     if(autoSelect){
       const h=selectHit(p.x,p.y); target = h ? h.note : null;      // ON: curve under cursor, else NEW
     } else if(selection.size>0 || ptSel.size>0){
       target=depositTargetAt(p);                                   // OFF: topmost selected note whose extent holds the click
       if(!target){ flash('outside the selection’s extent — deselect (⊘) to draw a NEW note'); return; }
     }
+    // ⌗ SPLIT — the stroke does not go INTO the bound note; it CUTS it and lands between the
+    // remnants (material(+) ∧ boundary(+)). Deposit proceeds on the NEW-note path below, and
+    // the cut happens at release, when the stroke's span is known.
+    if(target && drawSplit && splitEligible()){ splitTargets=[target]; target=null; }
     if(target){ depositIntoNote(target, drawMode, p); return; }
     // empty scope → NEW note (deposit mechanics unchanged)
     if(drawMode==='pen'){ penTapNew(); return; }
@@ -2227,16 +2238,16 @@ cv.addEventListener('pointerdown',e=>{
     if(drawMode==='hold'){                               // hold = a flat 2-point note; the drag only sets its length (pitch stays level)
       const n={id:NID++, start:beat, dur:settings.defLen, vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
       notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-      drag={mode:'newHoldLen', note:n, sx:p.x, baseStart:beat, sign:polarity};
+      drag={mode:'newHoldLen', note:n, sx:p.x, baseStart:beat, splitTargets};
     } else if(drawMode==='glide'){
       const n={id:NID++, start:beat, dur:Math.max(0.0625,settings.defLen), curve:depositCurve,
                vel:+vel.value||96, voice:1, pts:[{t:0,hz},{t:1,hz}]};
       notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-      drag={mode:'newGlide', note:n, sx:p.x, sy:p.y, baseStart:beat, startHz:hz, sign:polarity};
+      drag={mode:'newGlide', note:n, sx:p.x, sy:p.y, baseStart:beat, startHz:hz, splitTargets};
     } else if(drawMode==='free'){
       const n={id:NID++, start:beat, dur:0.0001, vel:+vel.value||96, voice:1, pts:[{t:0,hz}]};
       notes.push(n); n.voice=autoVoice(n); selection.clear(); selection.add(n.id);
-      drag={mode:'newFree', note:n, baseStart:beat, raw:[{beat,hz}], sign:polarity};
+      drag={mode:'newFree', note:n, baseStart:beat, raw:[{beat,hz}], splitTargets};
     }
     changed();
   }
@@ -2275,8 +2286,7 @@ function depositIntoNote(n, dm, p){
     const np={t:t2,hz,curve:depositCurve}; const A=(i>0)?n.pts[i-1]:null; const orig=A?segCurve(n,i-1):(n.curve||'linear');
     n.pts.splice(i,0,np); applyAffect(A,np,orig);          // tentative insert; the held drag repositions, release commits
     segSel=null; tempoSel.clear(); pointSel={note:n, idx:i};
-    drag={mode:'resize', freezePitch:glued, note:n, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(n), ghost:{note:n,idx:i},
-          sign:polarity, ovrFrom:(polarity==='=' ? t2 : null)};   // ⇄: the drag's span is cleared on release
+    drag={mode:'resize', freezePitch:glued, note:n, ptIdx:i, ep:null, sx:p.x, sy:p.y, o:snapshot(n), ghost:{note:n,idx:i}};
     changed(); return;
   }
   if(dm==='pen'){
@@ -2292,14 +2302,13 @@ function depositIntoNote(n, dm, p){
     dragHist=histSnapshot();
     const b=Math.max(n.start, Math.min(n.start+n.dur, xToBeatIn(p.x,home)));
     const hz=snapPitchHzAt(yToHz(p.y), xToSec(p.x));
-    drag={mode:'freeOnto', note:n, raw:[{beat:b,hz}], sign:polarity};   // ⇄ replaces the swept span, ＋ merges
+    drag={mode:'freeOnto', note:n, raw:[{beat:b,hz}]};
     changed(); return;
   }
 }
-/* free-onto commit. Under ⇄ (the remembered default) the swept span is REPLACED by the
-   scribble — unchanged behaviour, now named as a sign rather than hardcoded into the mode.
-   Under ＋ it MERGES: the points beneath survive and the swept ones join them (rejected in
-   Cut-2 Stage-2 as a *default*, legitimate as an explicit sign).
+/* free-onto commit: replace the swept span's points with the (decimated) scribble. This is a
+   SCOPE-BOUND gesture and predates the sign row — ⇄ can never reach it, because ⇄ unbinds the
+   scope before drawing (Contract 6a). "A scribble means redraw" stands, as settled in Cut-2.
    The note's extent NEVER changes (deposit-confined law); untouched points keep their curves. */
 function commitFreeOnto(d){
   const n=d.note; if(d.raw.length<2) return;               // a bare tap sweeps nothing
@@ -2308,10 +2317,7 @@ function commitFreeOnto(d){
   const minStep=(en-s)/120;                                // decimate like rebuildFree
   const dec=[d.raw[0]]; for(let i=1;i<d.raw.length;i++){ if(d.raw[i].beat-dec[dec.length-1].beat>=minStep) dec.push(d.raw[i]); }
   if(dec[dec.length-1]!==d.raw[d.raw.length-1]) dec.push(d.raw[d.raw.length-1]);
-  const keepInside = d.sign==='+';                         // ＋ = merge: nothing beneath is removed
-  const merged=[ ...(keepInside ? abs : abs.filter(q=>q.beat<=s+1e-9)),
-                 ...dec.map(q=>({beat:q.beat,hz:q.hz})),
-                 ...(keepInside ? [] : abs.filter(q=>q.beat>=en-1e-9)) ]
+  const merged=[ ...abs.filter(q=>q.beat<=s+1e-9), ...dec.map(q=>({beat:q.beat,hz:q.hz})), ...abs.filter(q=>q.beat>=en-1e-9) ]
     .sort((a,b)=>a.beat-b.beat);
   const out=[]; for(const q of merged){ const l=out[out.length-1];
     if(l && Math.abs(q.beat-l.beat)<1e-6){ l.hz=q.hz; l.curve=undefined; continue; }  // sweep overwrites a coincident point
@@ -2571,27 +2577,12 @@ cv.addEventListener('pointerup',e=>{
       pitchRegions.sort((a,b)=>a.startSec-b.startSec);
       flash('tuning boundary moved'); }
     if(drag.mode==='playhead') endScrub();
-    if(drag.mode==='freeOnto'){ commitFreeOnto(drag); }   // ⇄ replaces the swept span, ＋ merges (tentative → committed)
-    // draw·⇄ onto an existing curve: the drag's own span is cleared, so the deposit is what's left there
-    if(drag.mode==='resize' && drag.sign==='=' && drag.ovrFrom!=null && drag.note){
-      const n=drag.note, tA=Math.min(drag.ovrFrom, n.pts[drag.ptIdx].t), tB=Math.max(drag.ovrFrom, n.pts[drag.ptIdx].t);
-      const kill=new Set();
-      for(let i=0;i<n.pts.length;i++){ if(i===drag.ptIdx) continue; if(n.pts[i].t>tA+1e-9 && n.pts[i].t<tB-1e-9) kill.add(i); }
-      if(kill.size && !removePoints(n, kill)) notes=notes.filter(x=>x!==n);   // ≥2-point law supplies the net
-    }
+    if(drag.mode==='freeOnto'){ commitFreeOnto(drag); }   // replace the swept span (tentative → committed)
     if(!['marquee','marqueeErase','freeErase','boundary','pitchBoundary','pan','scrollGutter','playhead'].includes(drag.mode)){ for(const n of notes) deriveHang(n); }   // geometry drags re-home & re-derive hangs
     if((drag.mode==='newGlide'||drag.mode==='newFree'||drag.mode==='newHoldLen')){
       // discard a deposit that never grew past a single point
       if(drag.note.pts.length<2){ notes=notes.filter(n=>n!==drag.note); }
-      // draw·⇄ on a NEW note: it overwrites the material it covers. `autoVoice` (run at deposit)
-      // DODGES a collision by taking a free voice — which would make ⇄ a no-op, since it is
-      // voice-scoped. Under ⇄ the deposit does not dodge: it adopts the voice of the topmost
-      // line it covers and takes that span. Covering nothing, it keeps what autoVoice gave it.
-      else if(drag.sign==='='){ const n=drag.note, [s,e]=noteSpanSec(n);
-        const v=voiceUnderSpan(s, e, n.id);
-        if(v!=null) n.voice=v;
-        const k=overwriteUnder(s, e, n.voice||1, new Set([n.id]));
-        if(k) flash('overwrote '+k+' note'+(k!==1?'s':'')); }
+      else if(drag.splitTargets) commitDrawSplit(drag);   // ⌗ split — the stroke cuts what it was drawn over
     }
     stage.classList.remove('tool-pan');
     drag=null; commitDragHist(); changed();
@@ -2743,8 +2734,10 @@ function syncSignRow(t){
   const seg=document.getElementById('polSeg'); if(!seg) return;
   const readsSign = (t==='select') || (t==='draw') || (autoSelect && t==='move');
   seg.classList.toggle('dim', !readsSign);
-  const eq=seg.querySelector('button[data-pol="="]');
-  if(eq) eq.classList.toggle('dim', t==='draw' && drawMode==='pen');   // pen·⇄ — a tap has no span
+  // ⌗ split needs a bound scope, ＋, and a stroke with a span — it dims rather than lying
+  const sb=document.getElementById('splitBtnDraw');
+  if(sb){ sb.classList.toggle('dim', t!=='draw' || !splitEligible());
+    sb.classList.toggle('on', drawSplit); }
 }
 function setPolarity(p,remember){
   polarity=p;
@@ -2769,6 +2762,12 @@ function setTool(t){
 document.querySelectorAll('#polSeg button').forEach(b=>b.addEventListener('click',()=>{
   setPolarity(b.dataset.pol);
 }));
+document.getElementById('splitBtnDraw').onclick=()=>{
+  drawSplit=!drawSplit;
+  syncSignRow(view.tool);
+  flash(drawSplit?'⌗ split ON — the stroke cuts the bound note and lands between the remnants':'⌗ split OFF — the stroke draws into the bound note');
+  updateTargetPill(lastMouse);
+};
 document.querySelectorAll('#drawModeSeg button').forEach(b=>b.addEventListener('click',()=>{
   const m=b.dataset.dm;
   if(m==='pen' && drawMode==='pen' && penNote){ finalizePen(); return; }   // tap pen chip again to finish the path
@@ -3365,26 +3364,29 @@ function carveSpan(note, sec0, sec1){
   // drop the piece(s) the gesture covers: any whose midpoint lies inside the cut span
   return pieces.filter(p=>{ const [s,e]=noteSpanSec(p); const mid=(s+e)/2; return !(mid>sec0-1e-9 && mid<sec1+1e-9); });
 }
-/* which voice does a ⇄ deposit take over? the TOPMOST line it covers (draw over that line and
-   it is the one you replace); null when it covers nothing, and the deposit keeps autoVoice's. */
-function voiceUnderSpan(sec0, sec1, exceptId){
-  for(let i=notes.length-1;i>=0;i--){ const n=notes[i]; if(n.id===exceptId) continue;
-    const [s,e]=noteSpanSec(n); if(s<sec1-1e-9 && e>sec0+1e-9) return n.voice||1; }
-  return null;
-}
-/* draw·⇄ — material(−) then material(+): clear the covered span in this voice, then the deposit
-   lands. This is Dev-5's tier-3 "tiling ON" as a gesture; move stays free to break it (Contract 5). */
-function overwriteUnder(sec0, sec1, voice, exceptIds){
-  if(!(sec1>sec0)) return 0;
-  const keep=[]; let touched=0;
-  for(const n of notes){
-    if((exceptIds && exceptIds.has(n.id)) || (n.voice||1)!==voice){ keep.push(n); continue; }
-    const pieces=carveSpan(n, sec0, sec1);
-    if(pieces.length===1 && pieces[0]===n){ keep.push(n); continue; }
-    touched++; keep.push(...pieces);
+/* ⌗ DRAW·SPLIT — material(+) ∧ boundary(+), the one diagonal compound (Contract 1, Dev-6).
+   The stroke is drawn over a BOUND note; at release it cuts that note to its own span and lands
+   between the remnants, contiguous with them (owner, 2026-08-06: "fills the gap, then separates").
+   Where ⇄ unbinds and draws beside what was selected, split keeps the binding and consumes it.
+   Everything about the cut comes from carveSpan: the piece count from the geometry (Contract 2),
+   both remnants surviving (Contract 4), annihilation from the ≥2-point law (Contract 3). */
+function splitEligible(){ return polarity==='+' && drawMode!=='pen'; }   // a tap has no span to cut with
+function commitDrawSplit(d){
+  const stroke=d.note, targets=d.splitTargets||[];
+  const [s,e]=noteSpanSec(stroke); if(!(e>s)) return;
+  let cut=0, remnants=0;
+  for(const t of targets){
+    if(t===stroke || !notes.includes(t)) continue;
+    const pieces=carveSpan(t, s, e);
+    if(pieces.length===1 && pieces[0]===t) continue;                     // the stroke missed it
+    stroke.voice=t.voice||1;                                             // the stroke joins the line it cut
+    notes=notes.filter(n=>n!==t).concat(pieces);
+    cut++; remnants+=pieces.length;
   }
-  if(touched){ notes=keep; if(pointSel && !notes.includes(pointSel.note)) pointSel=null; }
-  return touched;
+  if(!cut) return;
+  if(pointSel && !notes.includes(pointSel.note)) pointSel=null;
+  clearGran(); selection.add(stroke.id);                                 // the scope becomes what you drew
+  flash(remnants ? ('split into '+(remnants+1)+' notes') : 'split — the stroke covered it whole');
 }
 function splitSelection(){
   const map=new Map();   // note -> Set(interior split idx)
@@ -3486,11 +3488,15 @@ function updateTargetPill(hoverP){
   const selPresent=pool.size>0;
   let txt='';
   if(view.tool==='draw'){
-    const v = polarity==='=' ? 'draw(⇄)' : 'draw';       // ⇄ overwrites what the deposit covers
+    const cutting = drawSplit && splitEligible();
+    const v = cutting ? 'draw⌗' : 'draw';
     if(polarity==='-'){
       txt = autoSelect ? 'draw(−) → erase' : (selPresent ? ('draw(−) → sel ('+pool.size+')') : 'draw(−) → –');
-    } else if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null; txt=v+' → '+(h?('note '+h.note.id):'NEW'); }
+    } else if(polarity==='='){ txt='draw(⇄) → NEW';                       // ⇄ unbinds first: always a new note
+    } else if(autoSelect){ const h=hoverP?selectHit(hoverP.x,hoverP.y):null;
+      txt=v+' → '+(h?((cutting?'cut note ':'note ')+h.note.id):'NEW'); }
     else if(!selPresent) txt=v+' → NEW';
+    else if(cutting) txt = pool.size===1 ? ('draw⌗ → cut note '+[...pool][0]) : ('draw⌗ → cut sel ('+pool.size+')');
     else txt = pool.size===1 ? (v+' → note '+[...pool][0]) : (v+' → sel ('+pool.size+')');
   } else if(view.tool==='move'){
     txt = selPresent ? ('move → '+(pool.size===1?('note '+[...pool][0]):('sel ('+pool.size+')'))) : (autoSelect?'move → hover':'move → –');

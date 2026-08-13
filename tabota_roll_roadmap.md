@@ -1621,3 +1621,82 @@ draggable, persisted frame inspector opened by button or region flag. Verified: 
 across three harnesses extracted from the live file, 4/4 script blocks parse-clean, browser-measured
 with the error trap armed (zero errors). Undone: the ♩= relabel asymmetry documented above is left
 in place, and the feel items are unresolved. Harnesses live in the scratchpad `tt/`, as before.
+
+---
+
+## Development 9 (2026-08-06) — ⇄ CORRECTED + ⌗ DRAW·SPLIT BUILT
+
+### Contract 6a — ⇄ SPEAKS TO THE BINDING, NOT THE MATERIAL (owner ruling; corrects Dev 8)
+
+Dev 8 shipped ⇄ under draw as **overwrite** (the deposit takes the span it covers, adopting the
+covered line's voice). That was wrong, and the owner's statement of the right rule is short:
+
+> draw·split and draw·merge only activate when there is a selected note prior to the drawing.
+> They cut the selected note. ⇄ first **deselects** — so ⇄ nullifies split and merge: it makes a
+> new note without touching anything previously selected, and it lands in another voice because
+> they overlap. Two notes.
+
+So the sign's noun does **not** vary with the verb after all. ⇄ is always `scope(−) then act`:
+- **select ⇄** — clear the scope, bind what was clicked (the old `replace`; unchanged).
+- **draw ⇄** — unbind, then deposit a NEW note. `autoVoice` dodges the overlap as it always has.
+- ⇒ **⇄ nullifies ⌗ split**, which needs something bound to cut. Nothing to state separately;
+  it falls out.
+
+This is the better law: ＋/− act on the verb's noun, ⇄ acts on the binding, and one sentence
+covers every verb. **Reverted from Dev 8:** `overwriteUnder`, `voiceUnderSpan`, the ⇄ branches in
+`pointerup`/`depositIntoNote`, and free-onto's `＋`-means-merge fork — free-onto is scope-bound, so
+⇄ can never reach it and "a scribble means redraw" stands as settled in Cut-2 Stage-2. **Kept:**
+`carveSpan`, which was the point of that build; split is its caller now. The Dev-8 claim that
+"draw·⇄ *is* Dev-5's tiling ON" is **withdrawn** — no gesture claims that today.
+
+### ⌗ draw·split — BUILT (the one diagonal compound: material(+) ∧ boundary(+))
+Owner's reading of what the stroke's material does: **fills the gap, then separates.** Three
+contiguous notes where there was one — the incumbent's two remnants plus the stroke between them,
+touching, no silence at the cut.
+
+- `⌗ split` toggle in the draw group. `splitEligible()` = `＋` and a mode with a span, so it dims
+  under pen (a tap has nothing to cut with), under `−` (that is erase, and sever is still parked),
+  under ⇄ (nothing stays bound), and under every other verb.
+- With a note bound, the stroke does NOT enter it: `splitTargets` rides the ordinary NEW-note
+  deposit drag, and `commitDrawSplit` carves the target to the stroke's span at release, when the
+  span is finally known. The stroke **joins the voice of the line it cut** — it is that line's
+  middle piece now, not a newcomer.
+- Piece count from the geometry (Contract 2), both remnants surviving (Contract 4), annihilation
+  from the ≥2-point law (Contract 3). No new law, exactly as Dev 6 predicted.
+- The scope after a cut is **the stroke** — the pill reads `draw⌗ → cut note N` before, and binds
+  what you drew after.
+- **Behaviour worth knowing (falls out of the hard law):** a split stroke must BEGIN inside the
+  bound note's extent, because that is how the deposit target is resolved. Starting outside gives
+  the usual refusal flash. So you cut from within, never from beside. Feels right in the two
+  gestures tested; flagged in case it does not in composing.
+
+**Proven (Node, extracted from the live HTML):** `verify_split` **30** (eligibility across sign ×
+mode; interior cut → 3 notes with the remnants' spans exact and the stroke filling the gap it made;
+both edge crossings → 1 remnant; total coverage → the stroke alone; a miss changes nothing and
+keeps the incumbent's identity; the stroke inherits the cut line's voice and becomes the scope; a
+stroke can never cut itself) · `verify_carve` **29** · `verify_setop` **50** (reseeded: free boots
+at ＋ now) · `verify_freeonto` **9** (always replaces; a stray sign changes nothing). All 4
+`<script>` blocks parse-check clean.
+
+**Browser-measured (localhost:8000, error trap armed, ZERO errors):** chip dims under pen / − / ⇄ /
+other verbs; pill reads `draw⌗ → cut note 14` then `draw⌗ → cut note 15`; **interior cut 14 → 16
+notes with the stroke reading v3, the incumbent's voice**; **total coverage from the note's own
+start stays at 14 — the incumbent is gone and the stroke stands in its place**; **⇄ with a note
+bound deposits a new note (15 → 16) in voice 5 while the bound note survives untouched**; undo
+returns 16 → 14 → 13 one gesture at a time.
+
+*Test-method note:* a deposit drawn far outside the ACTIVE region gets clamped back into that
+region's extent, so it renders nowhere near the cursor. Two "failures" during this smoke were that,
+not defects. Probe with `◎ +sel` ON and read the target pill while hovering — it names the note
+under the cursor, which is the only reliable way to find where anything actually IS.
+
+**Still open / next:** `erase·sever` (the empty cell; minimum-material degeneracy documented in
+Dev 6) · `draw·merge`, the counterpart compound — material(+) ∧ boundary(−) — now that split has
+a shape to mirror · the ♩= relabel asymmetry (Dev 8, a separate session is on it) ·
+`tabota/gesturelab/` is now **due for deletion** by the Dev-6 ruling, since draw·split has landed.
+
+2026-08-06 — Claude Code — Dev 9: reverted ⇄-as-overwrite to ⇄-as-unbind (Contract 6a, owner's
+correction), built ⌗ draw·split over `carveSpan`. Verified: 118 Node assertions across four
+harnesses extracted from the live file, 4/4 script blocks parse-clean, browser-measured with the
+error trap armed (zero errors). Undone: `erase·sever` and `draw·merge` unbuilt; gesturelab not yet
+deleted (left for the owner to confirm, since it is untracked and git cannot bring it back).
