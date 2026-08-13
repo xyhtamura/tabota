@@ -1715,3 +1715,36 @@ Fixes the pre-existing relabel asymmetry documented in Dev 8.
 
 2026-08-14 — Antigravity — Dev 10: fixed ♩= relabel asymmetry by scaling explicit `m.tempo` points during `relabelActiveRegion` and invalidating `tempoMapDirty()`. Verified: Node assertion test `verify_relabel.cjs` passed (4.0s exact conservation).
 
+---
+
+2026-08-14 — Claude Code — **Design note only; no code touched.** Added
+[tabota_authorship_20260814.md](tabota_authorship_20260814.md), on machine
+authorship, verbosity, and the multi-editor merge problem. Nothing in `roll/` was
+opened or modified, so it does not collide with Dev 10 above.
+
+Three things in it bear on Roll's queue, none of them decided, all recorded rather
+than scheduled:
+
+- **A parametric-curve rule.** `value.curve` is the one facet that scales with
+  resolution rather than with composed content, so a stored sampled curve is a
+  raster inside a vector format. The note argues curves must stay control-points-
+  plus-easing. Nothing enforces this today and a sampled curve would pass
+  conformance.
+- **A fit-on-release drawing verb.** Freehand stroke reduced to control points at
+  release (least-squares Bézier, Schneider; Douglas–Peucker as a pre-pass). Sits
+  in the same verb family as the landed `draw·split` and the queued `draw·merge`.
+- **Frame edits are non-local.** Because inheritance is lexical scope, changing a
+  frame's tempo, units, or extent re-means every descendant without touching any
+  of them. This is invisible at one-editor-per-document and is the hard case for
+  any future multi-editor story.
+
+**Next in Dev is unchanged — `draw·merge` still stands.** The note argues §10 that
+the constraint on Tabota-as-substrate is the unbuilt compat corpus (`tabota_compat.md`
+§3.1) and harness (§6), rather than further language design, but that is an argument
+put to the owner and not a decision, so ROADMAP.md was left alone.
+
+Left undone: everything the note proposes. Two claims in it (§6 on interchange-format
+history, §8 on round-trip failure in AAF/OMF) are explicitly marked unverified and
+point at the new [`../learning/interchange/`](../learning/interchange/) track, which
+is itself a specification with no module written.
+
